@@ -1,0 +1,10 @@
+idf_component_register(
+    SRCS
+        "process.c"
+        "json_formatter.c"
+    INCLUDE_DIRS
+        "."
+    REQUIRES
+        common
+        bms
+)

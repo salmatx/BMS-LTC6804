@@ -1,0 +1,24 @@
+menu "BMS Network Configuration"
+
+config BMS_WIFI_SSID
+    string "Wi-Fi SSID"
+    default "example-ssid"
+    help
+        SSID of the Wi-Fi network to connect to.
+        This can be overridden in sdkconfig.
+
+config BMS_WIFI_PASS
+    string "Wi-Fi password"
+    default "example-password"
+    help
+        Password for the Wi-Fi network.
+        This can be overridden in sdkconfig.
+
+config BMS_MQTT_BROKER_URI
+    string "MQTT broker URI"
+    default "mqtt://192.168.1.100:1883"
+    help
+        URI of the MQTT broker (e.g. mqtt://192.168.1.8:1883).
+        This can be overridden in sdkconfig.
+
+endmenu

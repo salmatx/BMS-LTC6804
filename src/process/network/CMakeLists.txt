@@ -1,0 +1,13 @@
+idf_component_register(
+    SRCS
+        "wifi.c"
+        "mqtt.c"
+    INCLUDE_DIRS
+        "."
+    REQUIRES
+        common
+        process
+        esp_wifi
+        mqtt
+        nvs_flash
+)
