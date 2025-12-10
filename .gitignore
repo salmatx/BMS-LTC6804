@@ -1,0 +1,9 @@
+build/
+.cache/
+esp-idf*
+
+sdkconfig
+sdkconfig.old
+
+.vscode/
+.idea/
