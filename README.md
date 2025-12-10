@@ -19,6 +19,10 @@ Projects uses ESP-IDF framework. It is recommended to use sdkconfig settings as 
 - Set Interrupt watchdog to Enabled
 - Set value of Interrupt watchdog timeout to 1000 ms
 
+**Component config --> FreeRTOS --> Kernel**
+
+- Set configTICK_RATE_HZ to 1000 Hz
+
 **BMS Network Configuration**
 
 - Set Wi-Fi SSID of used AP
