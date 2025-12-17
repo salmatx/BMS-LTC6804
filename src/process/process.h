@@ -63,7 +63,8 @@ typedef struct {
 /*==============================================================================================================*/
 /*                                        Public Function Prototypes                                            */
 /*==============================================================================================================*/
-bool bms_compute_stats(bms_sample_buffer_t *buf, bms_stats_buffer_t *out_stats);
+int bms_compute_stats(bms_sample_buffer_t *buf, bms_stats_buffer_t *out_stats);
+void remove_processed_samples(bms_sample_buffer_t *buf, int sample_count);
 
 /*==============================================================================================================*/
 /*                                          Public Inline Functions                                             */

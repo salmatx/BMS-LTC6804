@@ -47,11 +47,11 @@ static void calculate_average(bms_stats_t *accumulated_samples);
 ///
 /// \param buf Pointer to ring buffer containing raw BMS samples
 /// \param out_stats Pointer to output statistics buffer
-/// \return true if statistics were computed and stored in out_stats, false otherwise
-bool bms_compute_stats(bms_sample_buffer_t *buf, bms_stats_buffer_t *out_stats)
+/// \return Number of processed samples
+int bms_compute_stats(bms_sample_buffer_t *buf, bms_stats_buffer_t *out_stats)
 {
     if (!buf || !out_stats || !buf->samples || buf->count == 0) {
-        return false;
+        return 0;
     }
 
     out_stats->stats_count = 0;
@@ -63,7 +63,7 @@ bool bms_compute_stats(bms_sample_buffer_t *buf, bms_stats_buffer_t *out_stats)
 
     // Require a full 1 s window; if fewer samples, skip processing
     if (buf->count < samples_per_1s) {
-        return false;
+        return 0;
     }
 
     // Check how many samples are available for processing (up to 1 s). Must be at least 20 samples.
@@ -113,11 +113,8 @@ bool bms_compute_stats(bms_sample_buffer_t *buf, bms_stats_buffer_t *out_stats)
             bms_sample_zero(&buf->samples[idx]);
         }
 
-        // Consume all samples used for this calculation (the whole 1 s window). Moving head and reducing count.
-        buf->head  = (buf->head + available_samples_count) % buf->capacity;
-        buf->count -= available_samples_count;
+        return available_samples_count;
 
-        return true;
     // Case 2: violation present -> split into 0.2 s subwindows.
     } else {
         // Number of stats windows created
@@ -158,12 +155,22 @@ bool bms_compute_stats(bms_sample_buffer_t *buf, bms_stats_buffer_t *out_stats)
             bms_sample_zero(&buf->samples[idx]);
         }
     
-        // Consume all samples used for this calculation (the whole 1 s window). Moving head and reducing count.
-        buf->head  = (buf->head + available_samples_count) % buf->capacity;
-        buf->count -= available_samples_count;
-    
-        return (windows_created > 0);
+        return available_samples_count;
     }
+}
+
+/// This function consumes samples from buffer by moving head and reducing count by value of sample_count.
+///
+/// \param buf Pointer to ring buffer containing raw BMS samples
+/// \param sample_count Number of samples to be removed
+/// \return None
+void remove_processed_samples(bms_sample_buffer_t *buf, int sample_count)
+{
+    // Consume all samples used for this calculation (the whole 1 s window). Moving head and reducing count.
+    buf->head  = (buf->head + sample_count) % buf->capacity;
+    buf->count -= sample_count;
+
+    return;
 }
 
 /*==============================================================================================================*/

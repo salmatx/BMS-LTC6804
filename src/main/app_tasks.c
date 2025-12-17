@@ -7,6 +7,7 @@
 #include "app_tasks.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "esp_err.h"
 #include "esp_log.h"
 #include "watchdog.h"
 #include "bms_adapter.h"
@@ -30,7 +31,7 @@
 /// Core 0 SW watchdog timeout in milliseconds.
 #define CORE0_SW_TIMEOUT_MS  30000
 
-/// TWDT feeding period in milliseconds. Udes by both Core 0 and Core 1 feeders.
+/// TWDT feeding period in milliseconds. Used by both Core 0 and Core 1 feeders.
 #define WDT_FEED_MS             20
 
 /// Core 1 real-time processing task period in milliseconds.
@@ -114,7 +115,8 @@ esp_err_t app_tasks_create(void)
 /// Core 0 task reads BMS samples from inter-core queue, computes statistics, and publishes them via MQTT.
 /// This task also monitors its own duty cycle using a software watchdog mechanism. If the task fails to complete
 /// its work within the defined timeout period, it disables feeding of the hardware TWDT, allowing it to expire
-/// and reset the system.
+/// and reset the system. Processing is gated so that samples are consumed only after MQTT publish
+/// is acknowledged (QoS1 PUBACK).
 ///
 /// \param arg Unused in current implementation and may be NULL
 /// \return None
@@ -131,7 +133,7 @@ static void core0_task(void *arg)
     TickType_t start;
     TickType_t end;
 
-    // Initialize buffer for popping samples from FreeRTOS queue
+    // Initialize ring buffer used to stage samples popped from inter-core queue
     bms_sample_buffer_t buf;
     buf.capacity = MAX_SAMPLES_PER_POP;
     buf.head     = 0;
@@ -162,23 +164,24 @@ static void core0_task(void *arg)
             buf.count++;
         }
 
-        // 2) Compute stats and publish then via MQTT until buffer is empty or not enough samples.
-        // Output stats buffer
+        // 2) Compute stats and publish them. Only consume samples after publish ACK.
         bms_stats_buffer_t stats_buf;
-        // Get MQTT client handle
-        esp_mqtt_client_handle_t client = bms_mqtt_get_client();
         // Buffer for JSON serialization
         char json_buf[512];
-        // 2.1) Process all available samples in ring buffer                                        
-         while (buf.count > 0) {
+
+        // 2.1) Process all available samples in ring buffer 
+        while (buf.count > 0) {
             // TODO: Consider computing stats until ring buffer is empty in one call instead of looping. Or at least
             //       compute stats until ring buffer is empty (using multiple calls) and send data via MQTT only once in buffer.
             //       Sending multiple MQTT messages in one Core 0 cycle may lead to congestion and delays.
-            
-            // Compute stats for samples in ring buffer read from 1 s.
-            if (!bms_compute_stats(&buf, &stats_buf)) {
-                break;
+
+            // Compute next stats window without consuming samples
+            int used_samples = bms_compute_stats(&buf, &stats_buf);
+            if (used_samples <= 0) {
+                break; // not enough samples to compute stats
             }
+
+            bool all_sent = true;
 
             // 2.2) Publish computed stats via MQTT in JSON format.
             for (size_t i = 0; i < stats_buf.stats_count; ++i) {
@@ -188,32 +191,39 @@ static void core0_task(void *arg)
                 int len = bms_stats_to_json(st, json_buf, sizeof(json_buf));
                 if (len < 0) {
                     BMS_LOGE("Failed to serialize stats to JSON");
-                    continue;
+                    all_sent = false;
+                    break;
                 }
 
-                // Publish JSON via MQTT
-                if (client) {
-                    int msg_id = esp_mqtt_client_publish(
-                        client,
-                        "bms/esp32/stats",  // topic
-                        json_buf,
-                        len,
-                        0,                  // QoS 0
-                        0                   // no retain
-                    );
-                    if (msg_id < 0) {
-                        BMS_LOGE("MQTT publish failed");
-                    }
-                } else {
-                    BMS_LOGW("MQTT client not ready, dropping stats");
+                // Publish and wait until broker ACKs the message (QoS1 => MQTT_EVENT_PUBLISHED).
+                esp_err_t perr = bms_mqtt_publish_blocking_qos1(
+                    "bms/esp32/stats",
+                    json_buf,
+                    len,
+                    pdMS_TO_TICKS(MQTT_PUBACK_TIMEOUT_MS)
+                );
+
+                if (perr != ESP_OK) {
+                    BMS_LOGW("MQTT publish not acknowledged (%s). Not consuming samples; retry next cycle.",
+                             esp_err_to_name(perr));
+                    all_sent = false;
+                    break;
                 }
 
-                // Log published stats summary into stdout
+                // Log only after successful ACK
                 BMS_LOGI("STAT[%u]: ts=%lu ticks, samples=%u, cell_errors=0x%04X",
                          (unsigned)i,
                          (unsigned long)st->timestamp,
                          (unsigned)st->sample_count,
                          (unsigned)st->cell_errors);
+            }
+
+            if (all_sent) {
+                // Consume raw samples only after all windows for this 1s chunk were sent successfully
+                remove_processed_samples(&buf, used_samples);
+            } else {
+                // Prevent computing/sending next stats until current is sent successfully
+                break;
             }
         }
 
@@ -338,6 +348,7 @@ static void core1_feeder_task(void *arg)
         vTaskDelay(feed_ticks);
     }
 }
+
 
 /// Core 0 TWDT feeder task. This task periodically feeds (resets) the hardware TWDT to prevent timeout.
 /// Feeding is only performed if \ref s_allow_feeding flag is true, otherwise feeding is skipped, allowing TWDT to expire

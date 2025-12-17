@@ -11,6 +11,8 @@
 /*==============================================================================================================*/
 /*                                               Public Macros                                                  */
 /*==============================================================================================================*/
+/// Timeout for waiting publish ACK (QoS1 PUBACK / MQTT_EVENT_PUBLISHED).
+#define MQTT_PUBACK_TIMEOUT_MS  2000
 
 /*==============================================================================================================*/
 /*                                               Public Types                                                   */
@@ -28,7 +30,8 @@
 /*                                        Public Function Prototypes                                            */
 /*==============================================================================================================*/
 esp_err_t bms_mqtt_init(void);
-esp_mqtt_client_handle_t bms_mqtt_get_client(void);
+esp_err_t bms_mqtt_publish_blocking_qos1(const char *topic, const char *data, int len, TickType_t timeout_ticks);
+bool bms_mqtt_is_connected(void);
 
 /*==============================================================================================================*/
 /*                                          Public Inline Functions                                             */
