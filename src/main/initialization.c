@@ -1,4 +1,4 @@
-/// This is the main application module. It initializes all necessary modules and starts application tasks.
+/// This is the initialization module. It initializes all necessary modules and starts application tasks.
 
 /*==============================================================================================================*/
 /*                                                Includes                                                      */
@@ -8,13 +8,21 @@
 #include "esp_log.h"
 #include "logging.h"
 #include "tasksSC.h"
-#include "watchdog.h"
+#include "tasksFC.h"
+#include "bms_adapter.h"
+#include "intercore_comm.h"
+#include "logging.h"
+#include "wifi.h"
+#include "mqtt.h"
+#include "spiffs.h"
+#include "http_server.h"
+
 
 /*==============================================================================================================*/
 /*                                             Private Macros                                                   */
 /*==============================================================================================================*/
 /// Log module tag used by logging module
-#define LOG_MODULE_TAG "MAIN"
+#define LOG_MODULE_TAG "INITIALIZATION"
 
 /*==============================================================================================================*/
 /*                                              Private Types                                                   */
@@ -23,7 +31,6 @@
 /*==============================================================================================================*/
 /*                                       Private Function Prototypes                                            */
 /*==============================================================================================================*/
-void app_main(void);
 
 /*==============================================================================================================*/
 /*                                            Private Constants                                                 */
@@ -44,31 +51,53 @@ void app_main(void);
 /*==============================================================================================================*/
 /*                                       Private Function Definitions                                           */
 /*==============================================================================================================*/
-/// Main application entry point. Initializes all necessary modules and starts application tasks.
+/// Application initialization. Initializes all necessary modules and starts application tasks.
 ///
 /// \param None
-/// \return None
-void app_main(void)
+/// \return true on success, false on failure
+bool initialization_exec(void)
 {
-    // Initialize logging system
-    bms_logging_init();
+     esp_err_t err;
 
-    esp_err_t err;
-
-    // Initialize software watchdog (TWDT)
-    err = bms_wdt_init();
+    // Initialize WiFi in station mode to connect to MQTT broker on remote server.
+    err = bms_wifi_init();
     if (err != ESP_OK) {
-        BMS_LOGE("Watchdog init failed: %s", esp_err_to_name(err));
-        return;
+        BMS_LOGE("WiFi init failed: %s", esp_err_to_name(err));
+        return false;
     }
 
-    // Create Slow Core tasks
-    err = slow_core_task_create();
+    err = bms_spiffs_init();
+    if (err != ESP_OK) return false;
+
+    err = bms_http_server_start();
+    if (err != ESP_OK) return false;
+
+    // MQTT initialization must be done after WiFi is initialized. Connecting to broker is done in MQTT module.
+    err = bms_mqtt_init();
     if (err != ESP_OK) {
-        BMS_LOGE("Slow Core tasks creation failed");
-        return;
+        BMS_LOGE("MQTT init failed: %s", esp_err_to_name(err));
+        return false;
     }
 
-    BMS_LOGI("Application started.");
+    // Select and initialize BMS adapter (demo adapter in current implementation)
+    err = bms_demo_adapter_select();
+    if (err != ESP_OK) {
+        BMS_LOGE("BMS adapter init failed: %s", esp_err_to_name(err));
+        return false;
+    }
+
+    // Initialize inter-core communication queue
+    bms_queue_init();
+
+    // Create Fast Core tasks
+    err = fast_core_tasks_create();
+    if (err != ESP_OK) {
+        BMS_LOGE("Fast Core tasks creation failed");
+        return false;
+    }
+
+    BMS_LOGI("Application started, tasks running");
+
+    return true;
 }
 

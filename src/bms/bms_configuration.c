@@ -29,7 +29,7 @@
 /*                                      Public Variables and Constants                                          */
 /*==============================================================================================================*/
 /// Parameters defining the battery pack configuration.
-const bms_config_t g_bms_config = {
+bms_config_t g_bms_config = {
     .cell_v_min   = 0.5f,
     .cell_v_max   = 2.0f,
     .pack_v_min   = 2.5f,

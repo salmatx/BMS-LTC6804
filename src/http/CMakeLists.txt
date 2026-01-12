@@ -1,0 +1,10 @@
+idf_component_register(
+    SRCS
+        "http_server.c"
+        "stats_history.c"
+    INCLUDE_DIRS
+        "."
+    REQUIRES
+        common
+        esp_http_server
+)

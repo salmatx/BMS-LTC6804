@@ -1,7 +1,11 @@
 idf_component_register(
     SRCS
         "main.c"
-        "app_tasks.c"
+        "appsm.c"
+        "initialization.c"
+        "tasksFC.c"
+        "tasksSC.c"
+        "spiffs.c"
     INCLUDE_DIRS
         "."
     REQUIRES
@@ -9,4 +13,8 @@ idf_component_register(
         bms
         process
         network
+        http
+        spiffs
 )
+
+spiffs_create_partition_image(spiffs ../spiffs FLASH_IN_PROJECT)
