@@ -14,7 +14,6 @@
 #include "logging.h"
 #include "wifi.h"
 #include "mqtt.h"
-#include "spiffs.h"
 #include "http_server.h"
 
 
@@ -65,9 +64,6 @@ bool initialization_exec(void)
         BMS_LOGE("WiFi init failed: %s", esp_err_to_name(err));
         return false;
     }
-
-    err = bms_spiffs_init();
-    if (err != ESP_OK) return false;
 
     err = bms_http_server_start();
     if (err != ESP_OK) return false;

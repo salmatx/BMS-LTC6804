@@ -2,9 +2,9 @@ idf_component_register(
     SRCS
         "bms_adapter.c"
         "intercore_comm.c"
-        "bms_configuration.c"
     INCLUDE_DIRS
         "."
     REQUIRES
         common
+        configuration
 )

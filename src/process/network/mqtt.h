@@ -12,7 +12,7 @@
 /*                                               Public Macros                                                  */
 /*==============================================================================================================*/
 /// Timeout for waiting publish ACK (QoS1 PUBACK / MQTT_EVENT_PUBLISHED).
-#define MQTT_PUBACK_TIMEOUT_MS  2000
+#define MQTT_PUBACK_TIMEOUT_MS  15000
 
 /*==============================================================================================================*/
 /*                                               Public Types                                                   */

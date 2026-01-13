@@ -7,6 +7,7 @@ idf_component_register(
     REQUIRES
         common
         process
+        configuration
         esp_wifi
         mqtt
         nvs_flash

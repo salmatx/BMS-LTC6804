@@ -15,6 +15,8 @@
 #include "initialization.h"
 #include "tasksSC.h"
 #include "stats_history.h"
+#include "spiffs.h"
+#include "configuration.h"
 
 /*==============================================================================================================*/
 /*                                             Private Macros                                                   */
@@ -216,9 +218,27 @@ static void state_input_handler(void)
     if (s_appsm.prev_state != s_appsm.curr_state) {
         switch (s_appsm.curr_state)
         {
-            case APP_ST_INIT:
-                // Placeholder for configuration file loading.
+            case APP_ST_INIT: {
+                /* 1) Mount SPIFFS so /spiffs/ paths exist */
+                esp_err_t err = bms_spiffs_init();   // your wrapper around esp_vfs_spiffs_register()
+                if (err != ESP_OK) {
+                    BMS_LOGE("SPIFFS init failed: %s", esp_err_to_name(err));
+                    /* Decide policy: either keep defaults and continue, or stop init */
+                    break;
+                }
+
+                /* 2) Load config overrides (keeps defaults if file missing/bad) */
+                err = configuration_load("/spiffs/config.json");
+                if (err != ESP_OK) {
+                    BMS_LOGW("Config not loaded (%s). Using defaults.", esp_err_to_name(err));
+                } else {
+                    BMS_LOGI("Config loaded: wifi_ssid=%s mqtt_uri=%s",
+                             g_cfg.wifi.ssid, g_cfg.mqtt.uri);
+                    BMS_LOGI("Battery cfg: cell_v_min=%0.3f cell_v_max=%0.3f",
+                             (double)g_cfg.battery.cell_v_min, (double)g_cfg.battery.cell_v_max);
+                }
                 break;
+            }
 
             case APP_ST_PROCESSING:
                 // Initialize ring buffer used to stage samples popped from inter-core queue
@@ -247,7 +267,7 @@ static void state_input_handler(void)
 
 static void state_output_handler(void)
 {
-    if (s_appsm.prev_state != s_appsm.curr_state) {
+    if (s_appsm.next_state != s_appsm.curr_state) {
         switch (s_appsm.curr_state)
         {
             case APP_ST_INIT:
@@ -255,7 +275,8 @@ static void state_output_handler(void)
                 break;
 
             case APP_ST_PROCESSING:
-                // Placeholder for state output handling logic for PROCESSING state
+                free(buf.samples);
+                buf.samples = NULL;
                 break;
 
             case APP_ST_CONFIG:

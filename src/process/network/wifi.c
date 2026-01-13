@@ -13,6 +13,7 @@
 #include "freertos/event_groups.h"
 #include "esp_netif.h"
 #include "lwip/inet.h"
+#include "configuration.h"
 
 /*==============================================================================================================*/
 /*                                             Private Macros                                                   */
@@ -80,8 +81,8 @@ esp_err_t bms_wifi_init(void)
 
     // Configure WiFi connection settings.
     wifi_config_t wifi_cfg = { 0 };
-    snprintf((char *)wifi_cfg.sta.ssid, sizeof(wifi_cfg.sta.ssid), "%s", BMS_WIFI_SSID);
-    snprintf((char *)wifi_cfg.sta.password, sizeof(wifi_cfg.sta.password), "%s", BMS_WIFI_PASS);
+    snprintf((char *)wifi_cfg.sta.ssid, sizeof(wifi_cfg.sta.ssid), "%s", g_cfg.wifi.ssid);
+    snprintf((char *)wifi_cfg.sta.password, sizeof(wifi_cfg.sta.password), "%s", g_cfg.wifi.pass);
     wifi_cfg.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
 
     // Set WiFi mode to station and apply configuration

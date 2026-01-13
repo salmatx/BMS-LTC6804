@@ -3,10 +3,61 @@
 <head>
   <meta charset="utf-8">
   <title>BMS</title>
+  <style>
+    table { border-collapse: collapse; }
+    th, td { border: 1px solid #aaa; padding: 6px 10px; }
+    th { text-align: left; background: #f3f3f3; }
+  </style>
 </head>
 <body>
   <h2>BMS</h2>
+
+  
+  <h3>Configuration</h3>
+  
+  <table id="cfgTable">
+    <thead>
+      <tr><th>Parameter</th><th>Value</th></tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+  
   <button onclick="location.href='/bms/stats'">Display data</button>
   <button onclick="location.href='/bms/config'">Configure</button>
+  
+  <script>
+  function addRow(tbody, name, value) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${name}</td><td>${value}</td>`;
+    tbody.appendChild(tr);
+  }
+
+  function fmt2(x) {
+    // Handle missing/null values gracefully
+    if (x === undefined || x === null || x === '') return '';
+    return Number(x).toFixed(1);
+  }
+
+  async function loadCfg() {
+    const tbody = document.querySelector('#cfgTable tbody');
+    tbody.innerHTML = '';
+
+    const r = await fetch('/bms/config/data');
+    if (!r.ok) { addRow(tbody, 'Error', 'Failed to load config'); return; }
+    const j = await r.json();
+
+    addRow(tbody, 'WiFi SSID', j?.wifi?.ssid ?? '');
+    addRow(tbody, 'MQTT URI', j?.mqtt?.uri ?? '');
+
+    addRow(tbody, 'Cell V min',  fmt2(j?.battery?.cell_v_min) + ' V');
+    addRow(tbody, 'Cell V max',  fmt2(j?.battery?.cell_v_max) + ' V');
+    addRow(tbody, 'Pack V min',  fmt2(j?.battery?.pack_v_min) + ' V');
+    addRow(tbody, 'Pack V max',  fmt2(j?.battery?.pack_v_max) + ' V');
+    addRow(tbody, 'Current min', fmt2(j?.battery?.current_min) + ' A');
+    addRow(tbody, 'Current max', fmt2(j?.battery?.current_max) + ' A');
+  }
+
+  loadCfg();
+</script>
 </body>
 </html>

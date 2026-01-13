@@ -3,7 +3,7 @@
 /*==============================================================================================================*/
 #include "logging.h"
 #include "mqtt.h"
-#include "network_configuration.h"
+#include "configuration.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
@@ -71,8 +71,11 @@ esp_err_t bms_mqtt_init(void)
 
     // MQTT client configuration
     esp_mqtt_client_config_t cfg = {
-        .broker.address.uri       = BMS_MQTT_BROKER_URI,
+        .broker.address.uri       = g_cfg.mqtt.uri,
         .credentials.client_id    = "esp32-bms",
+        .network.timeout_ms = 30000,
+        .session.message_retransmit_timeout = 15000, // ms; QoS1/2 retry period
+        .session.keepalive = 60,
     };
 
     // Initialize MQTT client

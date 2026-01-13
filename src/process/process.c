@@ -5,7 +5,7 @@
 /*                                                Includes                                                      */
 /*==============================================================================================================*/
 #include "process.h"
-#include "bms_configuration.h"
+#include "configuration.h"
 #include <string.h>
 
 /*==============================================================================================================*/
@@ -187,21 +187,21 @@ static void check_limits_sample(const bms_sample_t *s, bms_stats_t *flags)
 {
     for (int i = 0; i < BMS_NUM_CELLS; ++i) {
         float v = s->cell_v[i];
-        if (v < g_bms_config.cell_v_min) {
+        if (v < g_cfg.battery.cell_v_min) {
             // Undervolatage bit
             flags->cell_errors |= (uint16_t)(0x01u << (i * 2 + 1u));
         }
-        if (v > g_bms_config.cell_v_max) {
+        if (v > g_cfg.battery.cell_v_max) {
             // Overvoltage bit
             flags->cell_errors |= (uint16_t)(0x01u << (i * 2 + 2u));
         }
     }
 
-    if (s->pack_i < g_bms_config.current_min) {
+    if (s->pack_i < g_cfg.battery.current_min) {
         // Undercurrent bit
         flags->cell_errors |= 0x0800u;
     }
-    if (s->pack_i > g_bms_config.current_max) {
+    if (s->pack_i > g_cfg.battery.current_max) {
         // Overcurrent bit
         flags->cell_errors |= 0x1000u;
     }

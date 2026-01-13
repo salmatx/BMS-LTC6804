@@ -4,12 +4,12 @@
 /*                                                Includes                                                      */
 /*==============================================================================================================*/
 #include "bms_adapter.h"
-#include "bms_configuration.h"
+#include "configuration.h"
 #include "logging.h"
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_mac.h"
-#include "esp_random.h" 
+#include "esp_random.h"
 #include <stdlib.h>
 #include <math.h>
 
@@ -148,7 +148,7 @@ static esp_err_t demo_read_sample(bms_sample_t *out)
     for (int i = 0; i < BMS_NUM_CELLS; ++i) {
         // Generate voltage withing configured min/max limits
         float r = demo_rand01();
-        float v = g_bms_config.cell_v_min + r * (g_bms_config.cell_v_max - g_bms_config.cell_v_min);
+        float v = g_cfg.battery.cell_v_min + r * (g_cfg.battery.cell_v_max - g_cfg.battery.cell_v_min);
 
         // Generates under-voltage or over-voltage based on defined probabilities
         float e = demo_rand01();
@@ -168,7 +168,7 @@ static esp_err_t demo_read_sample(bms_sample_t *out)
 
     // Generate random pack current within configured min/max limits
     float ir = demo_rand01();
-    out->pack_i = g_bms_config.current_min + ir * g_bms_config.current_max * 2.0f;
+    out->pack_i = g_cfg.battery.current_min + ir * g_cfg.battery.current_max * 2.0f;
 
     // Set timestamp
     out->timestamp = xTaskGetTickCount();
