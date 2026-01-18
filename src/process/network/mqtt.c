@@ -6,11 +6,11 @@
 #include "configuration.h"
 
 #include "freertos/FreeRTOS.h"
-#include "freertos/event_groups.h"
 
 #include "mqtt_client.h"
 #include "esp_err.h"
 #include "esp_log.h"
+
 
 /*==============================================================================================================*/
 /*                                             Private Macros                                                   */
@@ -18,21 +18,22 @@
 /// Log module tag used by logging module
 #define LOG_MODULE_TAG "BMS_MQTT"
 
-/// Event bit 0 is set when broker ACKs a QoS1/2 publish (MQTT_EVENT_PUBLISHED)
-#define MQTT_EV_PUBLISHED_BIT 1U
 
 /*==============================================================================================================*/
 /*                                              Private Types                                                   */
 /*==============================================================================================================*/
+
 
 /*==============================================================================================================*/
 /*                                       Private Function Prototypes                                            */
 /*==============================================================================================================*/
 static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data);
 
+
 /*==============================================================================================================*/
 /*                                            Private Constants                                                 */
 /*==============================================================================================================*/
+
 
 /*==============================================================================================================*/
 /*                                            Private Variables                                                 */
@@ -40,18 +41,14 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
 /// Handle to MQTT client.
 static esp_mqtt_client_handle_t s_mqtt = NULL;
 
-/// Event group used to wait for publish ACK (QoS1/2).
-static EventGroupHandle_t s_mqtt_ev = NULL;
-
-/// Last publish message id we are waiting to be ACKed by broker.
-static volatile int s_last_pub_msg_id = -1;
-
 /// True if MQTT client is connected.
 static volatile bool s_connected = false;
+
 
 /*==============================================================================================================*/
 /*                                      Public Variables and Constants                                          */
 /*==============================================================================================================*/
+
 
 /*==============================================================================================================*/
 /*                                       Public Function Definitions                                            */
@@ -62,19 +59,11 @@ static volatile bool s_connected = false;
 /// \return ESP_OK on success, otherwise an error code
 esp_err_t bms_mqtt_init(void)
 {
-    // Create event group for publish ACK signaling
-    s_mqtt_ev = xEventGroupCreate();
-    if (!s_mqtt_ev) {
-        BMS_LOGE("Failed to create MQTT event group");
-        return ESP_ERR_NO_MEM;
-    }
-
     // MQTT client configuration
     esp_mqtt_client_config_t cfg = {
         .broker.address.uri       = g_cfg.mqtt.uri,
         .credentials.client_id    = "esp32-bms",
         .network.timeout_ms = 30000,
-        .session.message_retransmit_timeout = 15000, // ms; QoS1/2 retry period
         .session.keepalive = 60,
     };
 
@@ -85,7 +74,7 @@ esp_err_t bms_mqtt_init(void)
         return ESP_FAIL;
     }
 
-    // Register MQTT event handler (needed for MQTT_EVENT_PUBLISHED handling)
+    // Register MQTT event handler
     esp_mqtt_client_register_event(s_mqtt, ESP_EVENT_ANY_ID, mqtt_event_handler, NULL);
 
     // Start MQTT client (connect to broker and start communication)
@@ -99,6 +88,7 @@ esp_err_t bms_mqtt_init(void)
     return ESP_OK;
 }
 
+
 /// This function returns true if MQTT client is connected to the broker.
 ///
 /// \param None
@@ -108,50 +98,40 @@ bool bms_mqtt_is_connected(void)
     return s_connected;
 }
 
-/// This function publishes a message with QoS1 and block until broker ACK is received (MQTT_EVENT_PUBLISHED) or timeout.
+
+/// This function publishes a message with QoS 0 (fire-and-forget, no ACK).
 ///
 /// Notes:
 /// - This function requires the MQTT client to be connected.
-/// - A return value of ESP_OK means the broker acknowledged the publish (QoS1 PUBACK).
+/// - QoS 0 = At most once delivery (no acknowledgment, no retries).
+/// - Returns immediately after sending, does not wait for broker response.
 ///
 /// \param topic MQTT topic
 /// \param data Pointer to payload buffer
 /// \param len Payload length
-/// \param timeout_ticks How long to wait for ACK
-/// \return ESP_OK on ACK, ESP_ERR_TIMEOUT on timeout, otherwise error
-esp_err_t bms_mqtt_publish_blocking_qos1(const char *topic, const char *data, int len, TickType_t timeout_ticks)
+/// \return ESP_OK on successful send, otherwise error
+esp_err_t bms_mqtt_publish_qos0(const char *topic, const char *data, int len)
 {
-    if (!s_mqtt || !s_mqtt_ev || !s_connected) {
-        return ESP_FAIL;
+    if (!s_mqtt || !s_connected) {
+        return ESP_ERR_INVALID_STATE;
     }
 
-    // Clear ACK bit from any previous operation
-    xEventGroupClearBits(s_mqtt_ev, MQTT_EV_PUBLISHED_BIT);
-
-    // Publish with QoS1 so MQTT_EVENT_PUBLISHED is emitted on PUBACK
-    int msg_id = esp_mqtt_client_publish(s_mqtt, topic, data, len, 1, 0);
+    // Publish with QoS 0: fire-and-forget, no PUBACK expected
+    int msg_id = esp_mqtt_client_publish(s_mqtt, topic, data, len, 0, 0);
+    
     if (msg_id < 0) {
+        BMS_LOGE("MQTT publish failed (msg_id=%d)", msg_id);
         return ESP_FAIL;
     }
 
-    s_last_pub_msg_id = msg_id;
-
-    // Wait until event handler signals publish ACK
-    EventBits_t bits = xEventGroupWaitBits(
-        s_mqtt_ev,
-        MQTT_EV_PUBLISHED_BIT,
-        pdTRUE,   // clear on exit
-        pdTRUE,   // wait all
-        timeout_ticks
-    );
-
-    return (bits & MQTT_EV_PUBLISHED_BIT) ? ESP_OK : ESP_ERR_TIMEOUT;
+    return ESP_OK;
 }
+
 
 /*==============================================================================================================*/
 /*                                       Private Function Definitions                                           */
 /*==============================================================================================================*/
-/// This function is MQTT event handler. Tracks connection state and signals when a QoS1/2 publish was ACKed by broker.
+/// This function is MQTT event handler. Tracks connection state.
 static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data)
 {
     (void)handler_args;
@@ -171,13 +151,6 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
     case MQTT_EVENT_DISCONNECTED:
         s_connected = false;
         BMS_LOGW("MQTT disconnected");
-        break;
-
-    case MQTT_EVENT_PUBLISHED:
-        // For QoS1/2, ESP-IDF posts MQTT_EVENT_PUBLISHED when publish is acknowledged.
-        if (s_mqtt_ev && (event->msg_id == s_last_pub_msg_id)) {
-            xEventGroupSetBits(s_mqtt_ev, MQTT_EV_PUBLISHED_BIT);
-        }
         break;
 
     case MQTT_EVENT_ERROR:

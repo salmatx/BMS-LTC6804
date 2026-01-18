@@ -1,5 +1,6 @@
 /// This module creates and manages real-time processing tasks running on Fast Core including watchdog feeding.
 
+
 /*==============================================================================================================*/
 /*                                                Includes                                                      */
 /*==============================================================================================================*/
@@ -13,21 +14,26 @@
 #include "intercore_comm.h"
 #include "logging.h"
 
+
 /*==============================================================================================================*/
 /*                                             Private Macros                                                   */
 /*==============================================================================================================*/
 /// Log module tag used by logging module
 #define LOG_MODULE_TAG "TASKS_FC"
 
+
 /// TWDT feeding period in milliseconds. Used by Fast Core feeder.
 #define WDT_FEED_MS             20
+
 
 /// Fast Core real-time processing task period in milliseconds.
 #define FAST_CORE_PERIOD_MS     50
 
+
 /*==============================================================================================================*/
 /*                                              Private Types                                                   */
 /*==============================================================================================================*/
+
 
 /*==============================================================================================================*/
 /*                                       Private Function Prototypes                                            */
@@ -35,9 +41,11 @@
 static void fast_core_task();
 static void fast_core_feeder_task();
 
+
 /*==============================================================================================================*/
 /*                                            Private Constants                                                 */
 /*==============================================================================================================*/
+
 
 /*==============================================================================================================*/
 /*                                            Private Variables                                                 */
@@ -45,9 +53,20 @@ static void fast_core_feeder_task();
 /// Flag indicating whether feeding of HW TWDT is allowed. Set to false on Slow Core SW watchdog timeout.
 static volatile bool s_allow_feeding = true;
 
+/// Flag to signal tasks to exit gracefully
+static volatile bool s_should_exit = false;
+
+/// Main task handle for Fast Core tasks
+static TaskHandle_t s_fast_core_task_handle = NULL;
+
+/// TWDT task handle for Fast Core tasks
+static TaskHandle_t s_fast_core_feeder_handle = NULL;
+
+
 /*==============================================================================================================*/
 /*                                      Public Variables and Constants                                          */
 /*==============================================================================================================*/
+
 
 /*==============================================================================================================*/
 /*                                       Public Function Definitions                                            */
@@ -62,14 +81,14 @@ esp_err_t fast_core_tasks_create(void)
     BaseType_t result;
 
     // Create Fast Core processing task. Higher priority than Fast Core feeder to ensure real-time processing.
-    result = xTaskCreatePinnedToCore(fast_core_task, "fast_core_task", 4096, NULL, 7, NULL, 1);
+    result = xTaskCreatePinnedToCore(fast_core_task, "fast_core_task", 4096, NULL, 7, &s_fast_core_task_handle, 1);
     if (result != pdPASS) {
         BMS_LOGE("Failed to create Fast Core processing task");
         return ESP_FAIL;
     }
 
     // Create Fast Core TWDT feeder task. Lower priority than Fast Core processing to ensure processing runs.
-    result = xTaskCreatePinnedToCore(fast_core_feeder_task, "fast_core_feeder_task", 2048, NULL, 6, NULL, 1);
+    result = xTaskCreatePinnedToCore(fast_core_feeder_task, "fast_core_feeder_task", 2048, NULL, 6, &s_fast_core_feeder_handle, 1);
     if (result != pdPASS) {
         BMS_LOGE("Failed to create Fast Core feeder task");
         return ESP_FAIL;
@@ -77,6 +96,43 @@ esp_err_t fast_core_tasks_create(void)
 
     return ESP_OK;
 }
+
+
+/// This function deletes all Fast Core tasks. Call before entering CONFIG state.
+/// Tasks will unregister from TWDT gracefully before deletion.
+void fast_core_tasks_delete(void)
+{
+    BMS_LOGI("Signaling Fast Core tasks to exit gracefully");
+    s_should_exit = true;
+    
+    // Wait for tasks to exit gracefully (up to 500ms)
+    for (int i = 0; i < 10; i++) {
+        if (!s_fast_core_task_handle && !s_fast_core_feeder_handle) {
+            break;  // Both tasks exited
+        }
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+    
+    // Force delete if still running (shouldn't happen)
+    if (s_fast_core_feeder_handle) {
+        BMS_LOGW("Force deleting Fast Core feeder task (didn't exit gracefully)");
+        vTaskDelete(s_fast_core_feeder_handle);
+        s_fast_core_feeder_handle = NULL;
+    }
+    
+    if (s_fast_core_task_handle) {
+        BMS_LOGW("Force deleting Fast Core processing task (didn't exit gracefully)");
+        vTaskDelete(s_fast_core_task_handle);
+        s_fast_core_task_handle = NULL;
+    }
+    
+    // Reset flags for potential restart
+    s_allow_feeding = true;
+    s_should_exit = false;
+    
+    BMS_LOGI("Fast Core tasks cleaned up");
+}
+
 
 /*==============================================================================================================*/
 /*                                       Private Function Definitions                                           */
@@ -106,7 +162,7 @@ static void fast_core_task()
     bms_sample_t sample;
 
     // Main Fast Core loop
-    while (1)
+    while (!s_should_exit)
     {
         // Start timing for real-time overrun check
         start = xTaskGetTickCount();
@@ -149,7 +205,12 @@ static void fast_core_task()
         // Puts task into blocked state for absolute period until next cycle (ensures real-time periodicity 20 Hz)
         vTaskDelayUntil(&last_wake, period);
     }
+    
+    BMS_LOGI("Fast Core processing task exiting gracefully");
+    s_fast_core_task_handle = NULL;
+    vTaskDelete(NULL);
 }
+
 
 
 /// Fast Core TWDT feeder task. This task periodically feeds (resets) the hardware TWDT to prevent timeout.
@@ -169,7 +230,7 @@ static void fast_core_feeder_task()
     const TickType_t feed_ticks = pdMS_TO_TICKS(WDT_FEED_MS);
 
     // Main Fast Core feeder loop. Periodically feed TWDT if allowed.
-    while (1)
+    while (!s_should_exit)
     {
         // Variable_allow_feeding indicates whether feeding is allowed. Variable can be set to false
         // by Fast Core tasks on error conditions.
@@ -181,4 +242,10 @@ static void fast_core_feeder_task()
         // Put task into blocked state for defined period
         vTaskDelay(feed_ticks);
     }
+    
+    // Unregister from TWDT before exiting to prevent watchdog trigger
+    BMS_LOGI("Fast Core feeder unregistering from TWDT and exiting gracefully");
+    bms_wdt_unregister_current_task();
+    s_fast_core_feeder_handle = NULL;
+    vTaskDelete(NULL);
 }

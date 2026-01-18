@@ -84,3 +84,60 @@ esp_err_t configuration_load(const char *path)
     ESP_LOGI(LOG_MODULE_TAG, "Config loaded from %s", path);
     return ESP_OK;
 }
+
+esp_err_t configuration_save(const char *path)
+{
+    cJSON *root = cJSON_CreateObject();
+    if (!root) return ESP_FAIL;
+
+    // WiFi configuration
+    cJSON *jwifi = cJSON_CreateObject();
+    cJSON_AddStringToObject(jwifi, "ssid", g_cfg.wifi.ssid);
+    cJSON_AddStringToObject(jwifi, "pass", g_cfg.wifi.pass);
+    cJSON_AddItemToObject(root, "wifi", jwifi);
+
+    // MQTT configuration
+    cJSON *jmqtt = cJSON_CreateObject();
+    cJSON_AddStringToObject(jmqtt, "uri", g_cfg.mqtt.uri);
+    cJSON_AddItemToObject(root, "mqtt", jmqtt);
+
+    // Battery configuration
+    cJSON *jbatt = cJSON_CreateObject();
+    cJSON_AddNumberToObject(jbatt, "cell_v_min", g_cfg.battery.cell_v_min);
+    cJSON_AddNumberToObject(jbatt, "cell_v_max", g_cfg.battery.cell_v_max);
+    cJSON_AddNumberToObject(jbatt, "pack_v_min", g_cfg.battery.pack_v_min);
+    cJSON_AddNumberToObject(jbatt, "pack_v_max", g_cfg.battery.pack_v_max);
+    cJSON_AddNumberToObject(jbatt, "current_min", g_cfg.battery.current_min);
+    cJSON_AddNumberToObject(jbatt, "current_max", g_cfg.battery.current_max);
+    cJSON_AddItemToObject(root, "battery", jbatt);
+
+    // Convert to formatted JSON string
+    char *json_str = cJSON_Print(root);
+    cJSON_Delete(root);
+
+    if (!json_str) {
+        ESP_LOGE(LOG_MODULE_TAG, "Failed to create JSON string");
+        return ESP_FAIL;
+    }
+
+    // Write to file
+    FILE *f = fopen(path, "wb");
+    if (!f) {
+        ESP_LOGE(LOG_MODULE_TAG, "Failed to open %s for writing", path);
+        free(json_str);
+        return ESP_FAIL;
+    }
+
+    size_t len = strlen(json_str);
+    size_t written = fwrite(json_str, 1, len, f);
+    fclose(f);
+    free(json_str);
+
+    if (written != len) {
+        ESP_LOGE(LOG_MODULE_TAG, "Failed to write config file");
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI(LOG_MODULE_TAG, "Config saved to %s", path);
+    return ESP_OK;
+}

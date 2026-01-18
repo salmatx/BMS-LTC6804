@@ -9,7 +9,6 @@
 #include "esp_wifi.h"
 #include "esp_event.h"
 #include "esp_log.h"
-#include "nvs_flash.h"
 #include "freertos/event_groups.h"
 #include "esp_netif.h"
 #include "lwip/inet.h"
@@ -51,14 +50,6 @@ static EventGroupHandle_t s_wifi_event_group;
 /// \return ESP_OK on success, otherwise an error code
 esp_err_t bms_wifi_init(void)
 {
-    // Initialize NVS (non-volatile key-value pairs) to store WiFi configuration
-    esp_err_t err = nvs_flash_init();
-    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        err = nvs_flash_init();
-    }
-    ESP_ERROR_CHECK(err);
-
     // Create the event group to handle WiFi events
     s_wifi_event_group = xEventGroupCreate();
 

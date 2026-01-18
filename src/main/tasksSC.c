@@ -1,5 +1,6 @@
 /// This module creates and manages application tasks running on Slow Core including watchdog feeding.
 
+
 /*==============================================================================================================*/
 /*                                                Includes                                                      */
 /*==============================================================================================================*/
@@ -12,11 +13,13 @@
 #include "appsm.h"
 #include "logging.h"
 
+
 /*==============================================================================================================*/
 /*                                             Private Macros                                                   */
 /*==============================================================================================================*/
 /// Log module tag used by logging module
 #define LOG_MODULE_TAG "TASKS_SC"
+
 
 /* Slow Core SW watchdog configuration (functional, not hard RT) */
 /// Slow Core SW watchdog strobe period and timeout in miliseconds. Slow Core SW watchdog monitors duty cycle of Slow Core task.
@@ -25,12 +28,15 @@
 /// Slow Core SW watchdog timeout in milliseconds.
 #define CORE0_SW_TIMEOUT_MS  30000
 
+
 /// TWDT feeding period in milliseconds. Used by Slow Core feeder.
 #define WDT_FEED_MS             20
+
 
 /*==============================================================================================================*/
 /*                                              Private Types                                                   */
 /*==============================================================================================================*/
+
 
 /*==============================================================================================================*/
 /*                                       Private Function Prototypes                                            */
@@ -38,9 +44,11 @@
 static void slow_core_task();
 static void slow_core_feeder_task();
 
+
 /*==============================================================================================================*/
 /*                                            Private Constants                                                 */
 /*==============================================================================================================*/
+
 
 /*==============================================================================================================*/
 /*                                            Private Variables                                                 */
@@ -48,9 +56,17 @@ static void slow_core_feeder_task();
 /// Flag indicating whether feeding of HW TWDT is allowed. Set to false on Slow Core SW watchdog timeout.
 static volatile bool s_allow_feeding = true;
 
+/// Flag to signal feeder task to exit gracefully
+static volatile bool s_should_exit_feeder = false;
+
+/// Task handle for Slow Core feeder (needed for deletion)
+static TaskHandle_t s_slow_core_feeder_handle = NULL;
+
+
 /*==============================================================================================================*/
 /*                                      Public Variables and Constants                                          */
 /*==============================================================================================================*/
+
 
 /*==============================================================================================================*/
 /*                                       Public Function Definitions                                            */
@@ -74,6 +90,7 @@ esp_err_t slow_core_task_create(void)
     return ESP_OK;
 }
 
+
 /// This function creates TWDT task on Slow Core. Tasks handles are not used and thus not returned,
 /// because it is not intended to manage tasks (suspend, delete etc,) after creation.
 ///
@@ -84,7 +101,7 @@ esp_err_t slow_core_TWDT_create(void)
     BaseType_t result;
 
     // Create Slow Core TWDT feeder task. Higher priority than Slow Core task to ensure feeder runs.
-    result = xTaskCreatePinnedToCore(slow_core_feeder_task, "slow_core_feeder_task", 2048, NULL, 5, NULL, 0);
+    result = xTaskCreatePinnedToCore(slow_core_feeder_task, "slow_core_feeder_task", 2048, NULL, 5, &s_slow_core_feeder_handle, 0);
     if (result != pdPASS) {
         BMS_LOGE("Failed to create Slow Core feeder task");
         return ESP_FAIL;
@@ -92,6 +109,39 @@ esp_err_t slow_core_TWDT_create(void)
 
     return ESP_OK;
 }
+
+
+/// This function deletes Slow Core feeder task. Call when entering CONFIG state.
+/// Task will unregister from TWDT gracefully before deletion.
+void slow_core_TWDT_delete(void)
+{
+    if (s_slow_core_feeder_handle) {
+        BMS_LOGI("Signaling Slow Core feeder to exit gracefully");
+        s_should_exit_feeder = true;
+        
+        // Wait for task to exit gracefully (up to 200ms)
+        for (int i = 0; i < 4; i++) {
+            if (!s_slow_core_feeder_handle) {
+                break;  // Task exited
+            }
+            vTaskDelay(pdMS_TO_TICKS(50));
+        }
+        
+        // Force delete if still running (shouldn't happen)
+        if (s_slow_core_feeder_handle) {
+            BMS_LOGW("Force deleting Slow Core feeder task (didn't exit gracefully)");
+            vTaskDelete(s_slow_core_feeder_handle);
+            s_slow_core_feeder_handle = NULL;
+        }
+        
+        // Reset flags for potential restart
+        s_allow_feeding = true;
+        s_should_exit_feeder = false;
+        
+        BMS_LOGI("Slow Core feeder cleaned up");
+    }
+}
+
 
 /*==============================================================================================================*/
 /*                                       Private Function Definitions                                           */
@@ -136,6 +186,7 @@ static void slow_core_task()
 }
 
 
+
 /// Slow Core TWDT feeder task. This task periodically feeds (resets) the hardware TWDT to prevent timeout.
 /// Feeding is only performed if \ref s_allow_feeding flag is true, otherwise feeding is skipped, allowing TWDT to expire
 /// and reset the system.
@@ -153,7 +204,7 @@ static void slow_core_feeder_task()
     const TickType_t feed_ticks = pdMS_TO_TICKS(WDT_FEED_MS);
 
     // Main Slow Core feeder loop. Periodically feed TWDT if allowed.
-    while (1)
+    while (!s_should_exit_feeder)
     {
         // Variable_allow_feeding indicates whether feeding is allowed. Variable can be set to false
         // by Slow Core tasks on error conditions.
@@ -165,4 +216,10 @@ static void slow_core_feeder_task()
         // Put task into blocked state for defined period
         vTaskDelay(feed_ticks);
     }
+    
+    // Unregister from TWDT before exiting to prevent watchdog trigger
+    BMS_LOGI("Slow Core feeder unregistering from TWDT and exiting gracefully");
+    bms_wdt_unregister_current_task();
+    s_slow_core_feeder_handle = NULL;
+    vTaskDelete(NULL);
 }

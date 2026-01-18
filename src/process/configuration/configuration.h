@@ -15,3 +15,6 @@ extern configuration_t g_cfg;
 
 // Load JSON from SPIFFS and override fields present.
 esp_err_t configuration_load(const char *path);
+
+// Save current configuration to JSON file
+esp_err_t configuration_save(const char *path);

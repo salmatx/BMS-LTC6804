@@ -10,5 +10,4 @@ idf_component_register(
         configuration
         esp_wifi
         mqtt
-        nvs_flash
 )

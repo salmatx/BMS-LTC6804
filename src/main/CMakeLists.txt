@@ -15,6 +15,7 @@ idf_component_register(
         network
         http
         spiffs
+        nvs_flash
 )
 
 spiffs_create_partition_image(spiffs ../spiffs FLASH_IN_PROJECT)

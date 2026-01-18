@@ -32,6 +32,7 @@ esp_err_t bms_wdt_init(void);
 esp_err_t bms_wdt_register_current_task(void);
 esp_err_t bms_wdt_feed_self(void);
 esp_err_t bms_wdt_unregister_current_task(void);
+esp_err_t bms_wdt_deinit(void);
 
 /*==============================================================================================================*/
 /*                                          Public Inline Functions                                             */

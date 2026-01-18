@@ -2,62 +2,94 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>BMS</title>
-  <style>
-    table { border-collapse: collapse; }
-    th, td { border: 1px solid #aaa; padding: 6px 10px; }
-    th { text-align: left; background: #f3f3f3; }
-  </style>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BMS Dashboard</title>
+  <link rel="stylesheet" href="/bms/css/style.css">
 </head>
 <body>
-  <h2>BMS</h2>
+  <div class="container">
+    <h1>BMS Dashboard</h1>
+    
+    <div class="info-box">
+      <strong>Welcome!</strong> View current configuration or navigate to data visualization and settings.
+    </div>
 
-  
-  <h3>Configuration</h3>
-  
-  <table id="cfgTable">
-    <thead>
-      <tr><th>Parameter</th><th>Value</th></tr>
-    </thead>
-    <tbody></tbody>
-  </table>
-  
-  <button onclick="location.href='/bms/stats'">Display data</button>
-  <button onclick="location.href='/bms/config'">Configure</button>
+    <h2>Current Configuration</h2>
+    
+    <div id="loadingMsg" class="loading">Loading configuration...</div>
+    
+    <table id="cfgTable" style="display:none;">
+      <thead>
+        <tr>
+          <th style="width: 50%;">Parameter</th>
+          <th style="width: 50%;">Value</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    
+    <div class="btn-group">
+      <button class="btn-primary" onclick="location.href='/bms/stats'">
+        📊 View Statistics
+      </button>
+      <button class="btn-success" onclick="location.href='/bms/config'">
+        ⚙️ Configure System
+      </button>
+    </div>
+  </div>
   
   <script>
-  function addRow(tbody, name, value) {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${name}</td><td>${value}</td>`;
-    tbody.appendChild(tr);
-  }
+    function addRow(tbody, name, value) {
+      const tr = document.createElement('tr');
+      const tdName = document.createElement('td');
+      const tdValue = document.createElement('td');
+      
+      tdName.textContent = name;
+      tdValue.innerHTML = value;
+      
+      tr.appendChild(tdName);
+      tr.appendChild(tdValue);
+      tbody.appendChild(tr);
+    }
 
-  function fmt2(x) {
-    // Handle missing/null values gracefully
-    if (x === undefined || x === null || x === '') return '';
-    return Number(x).toFixed(1);
-  }
+    function fmt2(x) {
+      if (x === undefined || x === null || x === '') return '';
+      return Number(x).toFixed(2);
+    }
 
-  async function loadCfg() {
-    const tbody = document.querySelector('#cfgTable tbody');
-    tbody.innerHTML = '';
+    async function loadCfg() {
+      const tbody = document.querySelector('#cfgTable tbody');
+      const loadingMsg = document.getElementById('loadingMsg');
+      const table = document.getElementById('cfgTable');
+      
+      tbody.innerHTML = '';
 
-    const r = await fetch('/bms/config/data');
-    if (!r.ok) { addRow(tbody, 'Error', 'Failed to load config'); return; }
-    const j = await r.json();
+      try {
+        const r = await fetch('/bms/config/data');
+        if (!r.ok) throw new Error('Failed to fetch');
+        
+        const j = await r.json();
 
-    addRow(tbody, 'WiFi SSID', j?.wifi?.ssid ?? '');
-    addRow(tbody, 'MQTT URI', j?.mqtt?.uri ?? '');
+        addRow(tbody, 'WiFi SSID', `<strong>${j?.wifi?.ssid ?? 'Not configured'}</strong>`);
+        addRow(tbody, 'WiFi Password', '••••••••');
+        addRow(tbody, 'MQTT Broker URI', j?.mqtt?.uri ?? 'Not configured');
+        addRow(tbody, 'Cell Voltage Min', `${fmt2(j?.battery?.cell_v_min)} <span class="value-unit">V</span>`);
+        addRow(tbody, 'Cell Voltage Max', `${fmt2(j?.battery?.cell_v_max)} <span class="value-unit">V</span>`);
+        addRow(tbody, 'Pack Voltage Min', `${fmt2(j?.battery?.pack_v_min)} <span class="value-unit">V</span>`);
+        addRow(tbody, 'Pack Voltage Max', `${fmt2(j?.battery?.pack_v_max)} <span class="value-unit">V</span>`);
+        addRow(tbody, 'Current Min', `${fmt2(j?.battery?.current_min)} <span class="value-unit">A</span>`);
+        addRow(tbody, 'Current Max', `${fmt2(j?.battery?.current_max)} <span class="value-unit">A</span>`);
 
-    addRow(tbody, 'Cell V min',  fmt2(j?.battery?.cell_v_min) + ' V');
-    addRow(tbody, 'Cell V max',  fmt2(j?.battery?.cell_v_max) + ' V');
-    addRow(tbody, 'Pack V min',  fmt2(j?.battery?.pack_v_min) + ' V');
-    addRow(tbody, 'Pack V max',  fmt2(j?.battery?.pack_v_max) + ' V');
-    addRow(tbody, 'Current min', fmt2(j?.battery?.current_min) + ' A');
-    addRow(tbody, 'Current max', fmt2(j?.battery?.current_max) + ' A');
-  }
+        loadingMsg.style.display = 'none';
+        table.style.display = 'table';
+        
+      } catch (err) {
+        loadingMsg.innerHTML = '<div class="error"><strong>Error:</strong> Failed to load configuration.</div>';
+        console.error('Error loading config:', err);
+      }
+    }
 
-  loadCfg();
-</script>
+    loadCfg();
+  </script>
 </body>
 </html>

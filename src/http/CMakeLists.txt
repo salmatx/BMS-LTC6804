@@ -9,4 +9,5 @@ idf_component_register(
         esp_http_server
         configuration
         json
+        nvs_flash
 )
