@@ -11,6 +11,7 @@
 #include <math.h>
 
 #include "esp_http_server.h"
+#include "lwip/sockets.h"
 #include "esp_system.h"
 #include "nvs_flash.h"
 #include "nvs.h"
@@ -34,6 +35,8 @@
 /*==============================================================================================================*/
 static esp_err_t send_file(httpd_req_t *req, const char *path, const char *ctype);
 static esp_err_t parse_post_param(const char *buf, const char *key, char *value, size_t value_len);
+static bool is_valid_ip(const char *ip_str);
+static esp_err_t send_error_modal(httpd_req_t *req, const char *title, const char *message);
 
 // Handlers for HTTP endpoints
 static esp_err_t h_config_data(httpd_req_t *req);
@@ -199,6 +202,60 @@ static esp_err_t parse_post_param(const char *buf, const char *key, char *value,
     return ESP_OK;
 }
 
+/// Sends an error modal window to the user with a custom title and message.
+/// Loads HTML template from file and replaces placeholders with actual values.
+///
+/// \param req Pointer to HTTP request structure
+/// \param title Title of the error modal
+/// \param message Error message to display
+/// \return ESP_FAIL always (to indicate validation error)
+static esp_err_t send_error_modal(httpd_req_t *req, const char *title, const char *message)
+{
+    // Load HTML template from file
+    FILE *f = fopen("/spiffs/bms/error_modal.html", "rb");
+    if (!f) {
+        // Fallback to simple error message if file not found
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Error loading error template");
+        return ESP_FAIL;
+    }
+
+    // Read template into buffer
+    char template[2048];
+    size_t len = fread(template, 1, sizeof(template) - 1, f);
+    fclose(f);
+    template[len] = '\0';
+
+    // Replace placeholders {{TITLE}} and {{MESSAGE}}
+    char response[2048];
+    char *src = template;
+    char *dst = response;
+    char *end = response + sizeof(response) - 1;
+
+    while (*src && dst < end) {
+        if (strncmp(src, "{{TITLE}}", 9) == 0) {
+            size_t title_len = strlen(title);
+            if (dst + title_len < end) {
+                strcpy(dst, title);
+                dst += title_len;
+            }
+            src += 9;
+        } else if (strncmp(src, "{{MESSAGE}}", 11) == 0) {
+            size_t msg_len = strlen(message);
+            if (dst + msg_len < end) {
+                strcpy(dst, message);
+                dst += msg_len;
+            }
+            src += 11;
+        } else {
+            *dst++ = *src++;
+        }
+    }
+    *dst = '\0';
+
+    httpd_resp_sendstr(req, response);
+    return ESP_FAIL;
+}
+
 /// This is the GET handler for retrieving current configuration data as JSON response. It builds JSON object
 /// containing current configuration parameters and sends it to the HTTP client.
 ///
@@ -283,16 +340,34 @@ static esp_err_t h_config_save(httpd_req_t *req)
 
     // Parse static IP (optional - empty means use DHCP)
     if (parse_post_param(buf, "wifi_static_ip", value, sizeof(value)) == ESP_OK) {
+        // Validate IP format if not empty
+        if (strlen(value) > 0 && !is_valid_ip(value)) {
+            BMS_LOGW("Invalid static IP format: %s", value);
+            return send_error_modal(req, "Invalid Static IP Address", 
+                "The IP address format is invalid. Please enter a valid IPv4 address (e.g., 192.168.1.100).");
+        }
         strncpy(g_cfg.wifi.static_ip, value, sizeof(g_cfg.wifi.static_ip) - 1);
         g_cfg.wifi.static_ip[sizeof(g_cfg.wifi.static_ip) - 1] = '\0';
     }
     
     if (parse_post_param(buf, "wifi_gateway", value, sizeof(value)) == ESP_OK) {
+        // Validate IP format if not empty
+        if (strlen(value) > 0 && !is_valid_ip(value)) {
+            BMS_LOGW("Invalid gateway format: %s", value);
+            return send_error_modal(req, "Invalid Gateway Address", 
+                "The gateway address format is invalid. Please enter a valid IPv4 address (e.g., 192.168.1.1).");
+        }
         strncpy(g_cfg.wifi.gateway, value, sizeof(g_cfg.wifi.gateway) - 1);
         g_cfg.wifi.gateway[sizeof(g_cfg.wifi.gateway) - 1] = '\0';
     }
     
     if (parse_post_param(buf, "wifi_netmask", value, sizeof(value)) == ESP_OK) {
+        // Validate IP format if not empty
+        if (strlen(value) > 0 && !is_valid_ip(value)) {
+            BMS_LOGW("Invalid netmask format: %s", value);
+            return send_error_modal(req, "Invalid Netmask", 
+                "The netmask format is invalid. Please enter a valid IPv4 netmask (e.g., 255.255.255.0).");
+        }
         strncpy(g_cfg.wifi.netmask, value, sizeof(g_cfg.wifi.netmask) - 1);
         g_cfg.wifi.netmask[sizeof(g_cfg.wifi.netmask) - 1] = '\0';
     }
@@ -352,36 +427,8 @@ static esp_err_t h_config_save(httpd_req_t *req)
     }
     
     // Send success response with auto-redirect
-    const char *resp = 
-        "<!DOCTYPE html><html><head>"
-        "<meta charset='UTF-8'>"
-        "<title>Configuration Saved</title>"
-        "<meta http-equiv='refresh' content='8;url=/bms'>"
-        "<style>"
-        "body{font-family:Arial,sans-serif;text-align:center;margin-top:50px;background:#f5f5f5}"
-        ".success{background:white;padding:40px;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,0.1);max-width:500px;margin:auto}"
-        "h1{color:#4CAF50;margin-bottom:20px;font-size:28px}"
-        ".checkmark{color:#4CAF50;font-size:48px;margin-bottom:10px}"
-        "p{color:#666;font-size:16px;margin:10px 0}"
-        ".countdown{font-weight:bold;color:#333}"
-        "</style>"
-        "<script>"
-        "let seconds=5;"
-        "function updateCountdown(){"
-        "document.getElementById('countdown').textContent=seconds;"
-        "if(seconds>0){seconds--;setTimeout(updateCountdown,1000);}"
-        "}"
-        "window.onload=function(){updateCountdown();};"
-        "</script>"
-        "</head>"
-        "<body><div class='success'>"
-        "<div class='checkmark'>&#10004;</div>"
-        "<h1>Configuration Saved Successfully!</h1>"
-        "<p>ESP32 is restarting with new configuration...</p>"
-        "<p class='countdown'>Redirecting in <span id='countdown'>5</span> seconds</p>"
-        "</div></body></html>";
-    
-    httpd_resp_sendstr(req, resp);
+    httpd_resp_set_type(req, "text/html");
+    esp_err_t send_err = send_file(req, "/spiffs/bms/config_saved.html", "text/html");
     
     BMS_LOGI("Configuration saved successfully. Restarting in 3 seconds...");
     
@@ -389,7 +436,7 @@ static esp_err_t h_config_save(httpd_req_t *req)
     vTaskDelay(pdMS_TO_TICKS(3000));
     esp_restart();
     
-    return ESP_OK;
+    return send_err;
 }
 
 // POST handler for canceling configuration mode
@@ -413,38 +460,9 @@ static esp_err_t h_config_cancel(httpd_req_t *req)
         BMS_LOGI("Config mode flag cleared");
     }
     
-    // Send response with redirect - matching style of save page
-    const char *resp = 
-        "<!DOCTYPE html><html><head>"
-        "<meta charset='UTF-8'>"
-        "<title>Configuration Canceled</title>"
-        "<meta http-equiv='refresh' content='8;url=/bms'>"
-        "<style>"
-        "body{font-family:Arial,sans-serif;text-align:center;margin-top:50px;background:#f5f5f5}"
-        ".success{background:white;padding:40px;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,0.1);max-width:500px;margin:auto}"
-        "h1{color:#FF9800;margin-bottom:20px;font-size:28px}"
-        ".icon{color:#FF9800;font-size:48px;margin-bottom:10px}"
-        "p{color:#666;font-size:16px;margin:10px 0}"
-        ".countdown{font-weight:bold;color:#333}"
-        "</style>"
-        "<script>"
-        "let seconds=5;"
-        "function updateCountdown(){"
-        "document.getElementById('countdown').textContent=seconds;"
-        "if(seconds>0){seconds--;setTimeout(updateCountdown,1000);}"
-        "}"
-        "window.onload=function(){updateCountdown();};"
-        "</script>"
-        "</head>"
-        "<body><div class='success'>"
-        "<div class='icon'>&#8634;</div>"
-        "<h1>Configuration Canceled</h1>"
-        "<p>No changes were saved.</p>"
-        "<p>ESP32 is restarting...</p>"
-        "<p class='countdown'>Redirecting in <span id='countdown'>5</span> seconds</p>"
-        "</div></body></html>";
-    
-    httpd_resp_sendstr(req, resp);
+    // Send response with redirect
+    httpd_resp_set_type(req, "text/html");
+    esp_err_t send_err = send_file(req, "/spiffs/bms/config_canceled.html", "text/html");
     
     BMS_LOGI("Restarting ESP32 to exit config mode...");
     
@@ -452,7 +470,7 @@ static esp_err_t h_config_cancel(httpd_req_t *req)
     vTaskDelay(pdMS_TO_TICKS(2000));
     esp_restart();
     
-    return ESP_OK;
+    return send_err;
 }
 
 /// This is the GET handler for root endpoint that redirects to main BMS page. It sends HTTP 302 redirect response.
@@ -529,4 +547,20 @@ static esp_err_t h_css_style(httpd_req_t *req)
 static esp_err_t h_stats_data(httpd_req_t *req)
 {
     return bms_stats_hist_send_as_json_array(req);
+}
+
+/// This fuction validates if the given string is a valid IPv4 address using inet_pton.
+/// This uses the same validation mechanism as WiFi connection creation.
+///
+/// \param ip_str String representation of the IP address
+/// \return true if the IP address is valid, false otherwise
+static bool is_valid_ip(const char *ip_str)
+{
+    if (ip_str == NULL || strlen(ip_str) == 0) {
+        return false;
+    }
+
+    struct in_addr addr;
+    // inet_pton returns 1 on success, 0 if invalid format, -1 on error
+    return inet_pton(AF_INET, ip_str, &addr) == 1;
 }

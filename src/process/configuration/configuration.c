@@ -43,6 +43,9 @@ configuration_t g_cfg = {
     .wifi = {
         .ssid = CONFIG_BMS_WIFI_SSID,
         .pass = CONFIG_BMS_WIFI_PASS,
+        .static_ip = "",
+        .gateway = "",
+        .netmask = "",
     },
     .mqtt = {
         .uri  = CONFIG_BMS_MQTT_BROKER_URI,
@@ -85,6 +88,9 @@ esp_err_t configuration_load(const char *path)
     if (cJSON_IsObject(jwifi)) {
         json_get_str(jwifi, "ssid", g_cfg.wifi.ssid, sizeof(g_cfg.wifi.ssid));
         json_get_str(jwifi, "pass", g_cfg.wifi.pass, sizeof(g_cfg.wifi.pass));
+        json_get_str(jwifi, "static_ip", g_cfg.wifi.static_ip, sizeof(g_cfg.wifi.static_ip));
+        json_get_str(jwifi, "gateway", g_cfg.wifi.gateway, sizeof(g_cfg.wifi.gateway));
+        json_get_str(jwifi, "netmask", g_cfg.wifi.netmask, sizeof(g_cfg.wifi.netmask));
     }
 
     cJSON *jmqtt = cJSON_GetObjectItem(root, "mqtt");
@@ -120,6 +126,9 @@ esp_err_t configuration_save(const char *path)
     cJSON *jwifi = cJSON_CreateObject();
     cJSON_AddStringToObject(jwifi, "ssid", g_cfg.wifi.ssid);
     cJSON_AddStringToObject(jwifi, "pass", g_cfg.wifi.pass);
+    cJSON_AddStringToObject(jwifi, "static_ip", g_cfg.wifi.static_ip);
+    cJSON_AddStringToObject(jwifi, "gateway", g_cfg.wifi.gateway);
+    cJSON_AddStringToObject(jwifi, "netmask", g_cfg.wifi.netmask);
     cJSON_AddItemToObject(root, "wifi", jwifi);
 
     // MQTT configuration

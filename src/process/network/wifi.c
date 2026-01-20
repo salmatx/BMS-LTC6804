@@ -14,6 +14,7 @@
 #include "freertos/event_groups.h"
 #include "esp_netif.h"
 #include "lwip/inet.h"
+#include "lwip/sockets.h"
 #include "configuration.h"
 
 /*==============================================================================================================*/
@@ -23,6 +24,8 @@
 #define LOG_MODULE_TAG "BMS_WIFI"
 /// Bit group to signal when WiFi is connected
 #define WIFI_CONNECTED_BIT BIT0
+/// Default netmask if none is configured and static IP is used
+#define DEFAULT_NETMASK "255.255.255.0"
 
 /*==============================================================================================================*/
 /*                                              Private Types                                                   */
@@ -46,7 +49,20 @@ static EventGroupHandle_t s_wifi_event_group;
 /*==============================================================================================================*/
 /*                                      Public Variables and Constants                                          */
 /*==============================================================================================================*/
-/// This function initializes the WiFi in station mode and connects to the configured AP.
+/// This function initializes the WiFi in station mode and connects to the configured AP. If static IP is configured,
+/// it attempts to set it before connecting. Function performs following steps:
+/// 1. Create event group for WiFi events.
+/// 2. Initialize TCP/IP stack.
+/// 3. Create default event loop for WiFi events.
+/// 4. Create default WiFi station network interface and start DHCP client.
+/// 5. If static IP is configured, stop DHCP client and set static IP, gateway, and netmask.
+///    If setting static IP fails, continue using DHCP.
+/// 6. Initialize WiFi with default configuration.
+/// 7. Register event handlers for WiFi and IP events.
+/// 8. Configure WiFi connection settings (SSID, password, auth mode).
+/// 9. Set WiFi mode to station and apply configuration.
+/// 10. Start WiFi.
+/// 11. Wait for connection or timeout.
 ///
 /// \param None
 /// \return ESP_OK on success, otherwise an error code
@@ -59,10 +75,10 @@ esp_err_t bms_wifi_init(void)
     ESP_ERROR_CHECK(esp_netif_init());
     // Create default event loop that handles WiFi events
     ESP_ERROR_CHECK(esp_event_loop_create_default());
-    // Create default WiFi station and attach it to TCP/IP stack
+    // Create default WiFi station and attach it to TCP/IP stack. Starts DHCP client automatically.
     esp_netif_t *netif = esp_netif_create_default_wifi_sta();
 
-    // Try to configure static IP if provided
+    // Check if static IP is configured and valid
     bool use_static_ip = false;
     if (g_cfg.wifi.static_ip[0] != '\0' && strlen(g_cfg.wifi.static_ip) > 0) {
         BMS_LOGI("Attempting to configure static IP: %s", g_cfg.wifi.static_ip);
@@ -70,34 +86,46 @@ esp_err_t bms_wifi_init(void)
         esp_netif_ip_info_t ip_info;
         memset(&ip_info, 0, sizeof(ip_info));
         
-        // Parse IP addresses
-        if (inet_pton(AF_INET, g_cfg.wifi.static_ip, &ip_info.ip) == 1 &&
-            inet_pton(AF_INET, g_cfg.wifi.gateway, &ip_info.gw) == 1 &&
-            inet_pton(AF_INET, g_cfg.wifi.netmask, &ip_info.netmask) == 1) {
+        // Parse static IP (required)
+        if (inet_pton(AF_INET, g_cfg.wifi.static_ip, &ip_info.ip) != 1) {
+            BMS_LOGW("Invalid static IP address format, using DHCP");
+        } else {
+            // Parse netmask (use default 255.255.255.0 if empty)
+            if (g_cfg.wifi.netmask[0] == '\0' || strlen(g_cfg.wifi.netmask) == 0) {
+                BMS_LOGI("Netmask not configured, using default %s", DEFAULT_NETMASK);
+                inet_pton(AF_INET, DEFAULT_NETMASK, &ip_info.netmask);
+            } else if (inet_pton(AF_INET, g_cfg.wifi.netmask, &ip_info.netmask) != 1) {
+                BMS_LOGW("Invalid netmask format, using default %s", DEFAULT_NETMASK);
+                inet_pton(AF_INET, DEFAULT_NETMASK, &ip_info.netmask);
+            }
             
-            // Stop DHCP client
+            // Parse gateway (optional - set to 0.0.0.0 if empty)
+            if (g_cfg.wifi.gateway[0] == '\0' || strlen(g_cfg.wifi.gateway) == 0) {
+                BMS_LOGI("Gateway not configured, local network only");
+                ip_info.gw.addr = 0;
+            } else if (inet_pton(AF_INET, g_cfg.wifi.gateway, &ip_info.gw) != 1) {
+                BMS_LOGW("Invalid gateway format, setting to none");
+                ip_info.gw.addr = 0;
+            }
+            
+            // Stop DHCP client (started automatically by esp_netif_create_default_wifi_sta)
             esp_err_t err = esp_netif_dhcpc_stop(netif);
-            if (err != ESP_OK && err != ESP_ERR_ESP_NETIF_DHCP_ALREADY_STOPPED) {
-                BMS_LOGW("Failed to stop DHCP client: %s, falling back to DHCP", esp_err_to_name(err));
-            } else {
-                // Set static IP
+            if (err == ESP_OK || err == ESP_ERR_ESP_NETIF_DHCP_ALREADY_STOPPED) {
+                // Try to set static IP
                 err = esp_netif_set_ip_info(netif, &ip_info);
                 if (err == ESP_OK) {
                     BMS_LOGI("Static IP configured successfully");
                     use_static_ip = true;
                 } else {
-                    BMS_LOGW("Failed to set static IP: %s, falling back to DHCP", esp_err_to_name(err));
-                    // Restart DHCP client on failure
+                    BMS_LOGW("Failed to set static IP: %s, restarting DHCP", esp_err_to_name(err));
                     esp_netif_dhcpc_start(netif);
                 }
+            } else {
+                BMS_LOGW("Failed to stop DHCP client: %s, falling back to DHCP", esp_err_to_name(err));
             }
-        } else {
-            BMS_LOGW("Invalid IP address format, falling back to DHCP");
         }
-    }
-    
-    if (!use_static_ip) {
-        BMS_LOGI("Using DHCP for IP address assignment");
+    } else {
+        BMS_LOGI("No static IP configured, using DHCP");
     }
 
     // Initialize WiFi with default configuration
