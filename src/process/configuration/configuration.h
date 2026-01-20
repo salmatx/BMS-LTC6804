@@ -1,20 +1,45 @@
+/// Header file for `configuration.c`.
+
+/*==============================================================================================================*/
+/*                                                 Includes                                                     */
+/*==============================================================================================================*/
 #pragma once
 #include <stdint.h>
 #include "esp_err.h"
 #include "bms_configuration.h"
 #include "network_configuration.h"
 
+/*==============================================================================================================*/
+/*                                               Public Macros                                                  */
+/*==============================================================================================================*/
+
+/*==============================================================================================================*/
+/*                                               Public Types                                                   */
+/*==============================================================================================================*/
+/// Structure defining the complete runtime configuration.
 typedef struct {
-    wifi_cfg_t     wifi;
-    mqtt_cfg_t     mqtt;
-    bms_config_t   battery;
+    wifi_cfg_t     wifi;        ///< Wi-Fi configuration
+    mqtt_cfg_t     mqtt;        ///< MQTT configuration
+    bms_config_t   battery;     ///< Battery properties configuration
 } configuration_t;
 
-// Global runtime configuration (defaults from Kconfig/compiled defaults, then file overrides).
+/*==============================================================================================================*/
+/*                                             Public Constants                                                 */
+/*==============================================================================================================*/
+
+/*==============================================================================================================*/
+/*                                             Public Variables                                                 */
+/*==============================================================================================================*/
+/// Global runtime configuration (initialized with default values from sdkconfig, then overridden from
+/// configuration file in SPIFFS if present).
 extern configuration_t g_cfg;
 
-// Load JSON from SPIFFS and override fields present.
+/*==============================================================================================================*/
+/*                                        Public Function Prototypes                                            */
+/*==============================================================================================================*/
 esp_err_t configuration_load(const char *path);
-
-// Save current configuration to JSON file
 esp_err_t configuration_save(const char *path);
+
+/*==============================================================================================================*/
+/*                                          Public Inline Functions                                             */
+/*==============================================================================================================*/

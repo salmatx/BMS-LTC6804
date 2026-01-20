@@ -12,13 +12,18 @@
 /*==============================================================================================================*/
 /*                                               Public Types                                                   */
 /*==============================================================================================================*/
+/// Structure defining Wi-Fi configuration parameters
 typedef struct {
-    char ssid[32];
-    char pass[64];
+    char ssid[32];           ///< Wi-Fi SSID
+    char pass[64];           ///< Wi-Fi password
+    char static_ip[16];      ///< Static IP address (empty string for DHCP)
+    char gateway[16];        ///< Gateway IP address
+    char netmask[16];        ///< Netmask
 } wifi_cfg_t;
 
+/// Structure defining MQTT configuration parameters
 typedef struct {
-    char uri[128];
+    char uri[128];      ///< MQTT broker URI
 } mqtt_cfg_t;
 
 /*==============================================================================================================*/

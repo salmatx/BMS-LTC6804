@@ -1,3 +1,5 @@
+/// This module implements WiFi connectivity.
+
 /*==============================================================================================================*/
 /*                                                Includes                                                      */
 /*==============================================================================================================*/
@@ -58,7 +60,45 @@ esp_err_t bms_wifi_init(void)
     // Create default event loop that handles WiFi events
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     // Create default WiFi station and attach it to TCP/IP stack
-    esp_netif_create_default_wifi_sta();
+    esp_netif_t *netif = esp_netif_create_default_wifi_sta();
+
+    // Try to configure static IP if provided
+    bool use_static_ip = false;
+    if (g_cfg.wifi.static_ip[0] != '\0' && strlen(g_cfg.wifi.static_ip) > 0) {
+        BMS_LOGI("Attempting to configure static IP: %s", g_cfg.wifi.static_ip);
+        
+        esp_netif_ip_info_t ip_info;
+        memset(&ip_info, 0, sizeof(ip_info));
+        
+        // Parse IP addresses
+        if (inet_pton(AF_INET, g_cfg.wifi.static_ip, &ip_info.ip) == 1 &&
+            inet_pton(AF_INET, g_cfg.wifi.gateway, &ip_info.gw) == 1 &&
+            inet_pton(AF_INET, g_cfg.wifi.netmask, &ip_info.netmask) == 1) {
+            
+            // Stop DHCP client
+            esp_err_t err = esp_netif_dhcpc_stop(netif);
+            if (err != ESP_OK && err != ESP_ERR_ESP_NETIF_DHCP_ALREADY_STOPPED) {
+                BMS_LOGW("Failed to stop DHCP client: %s, falling back to DHCP", esp_err_to_name(err));
+            } else {
+                // Set static IP
+                err = esp_netif_set_ip_info(netif, &ip_info);
+                if (err == ESP_OK) {
+                    BMS_LOGI("Static IP configured successfully");
+                    use_static_ip = true;
+                } else {
+                    BMS_LOGW("Failed to set static IP: %s, falling back to DHCP", esp_err_to_name(err));
+                    // Restart DHCP client on failure
+                    esp_netif_dhcpc_start(netif);
+                }
+            }
+        } else {
+            BMS_LOGW("Invalid IP address format, falling back to DHCP");
+        }
+    }
+    
+    if (!use_static_ip) {
+        BMS_LOGI("Using DHCP for IP address assignment");
+    }
 
     // Initialize WiFi with default configuration
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
@@ -104,15 +144,16 @@ esp_err_t bms_wifi_init(void)
 /*                                       Private Function Definitions                                           */
 /*==============================================================================================================*/
 /// WiFi event handler to manage connection events.
+/// Note that paramter 'arg' is unused and cannot be removed because this function is used as a callback with
+/// fixed signature of ESP-IDF event handler.
 ///
-/// \param arg Unused in current implementation and may be NULL
+/// \param arg Unused
 /// \param event_base Base of the event
 /// \param event_id ID of the event
 /// \param event_data Data associated with the event
 /// \return None
 static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
-    // TODO: remove parameters if unused in future implementation
     (void)arg;
     
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {

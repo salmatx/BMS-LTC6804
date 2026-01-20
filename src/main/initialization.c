@@ -65,7 +65,7 @@ bool initialization_exec(void)
         return false;
     }
 
-    err = bms_http_server_start();
+    err = http_server_start();
     if (err != ESP_OK) return false;
 
     // MQTT initialization must be done after WiFi is initialized. Connecting to broker is done in MQTT module.

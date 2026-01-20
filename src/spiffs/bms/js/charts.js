@@ -1,10 +1,21 @@
+/// Reference to chart instances for voltage
 let vChart = null;
+/// Reference to chart instances for current
 let iChart = null;
 
+/// Helper function to create a dataset object for Chart.js.
+///
+/// \param label Dataset label
+/// \param data Array of data points
+/// \return Dataset object
 function ds(label, data) {
   return { label, data, borderWidth: 1, pointRadius: 0 };
 }
 
+/// This function builds the voltage chart data from the history.
+///
+/// \param history Array of statistics history objects
+/// \return Chart.js data object
 function buildVoltage(history) {
   const labels = history.map(s => s.timestamp);
 
@@ -22,6 +33,10 @@ function buildVoltage(history) {
   return { labels, datasets };
 }
 
+/// This function builds the current chart data from the history.
+///
+/// \param history Array of statistics history objects
+/// \return Chart.js data object
 function buildCurrent(history) {
   const labels = history.map(s => s.timestamp);
   return {
@@ -34,6 +49,11 @@ function buildCurrent(history) {
   };
 }
 
+/// This function refreshes the charts by fetching new data and updating the Chart.js instances.
+/// It is called periodically to keep the charts up to date.
+///
+/// \param None
+/// \return None
 async function refresh() {
   const r = await fetch("/bms/stats/data");
   const history = await r.json();

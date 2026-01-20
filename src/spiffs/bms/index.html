@@ -72,6 +72,16 @@
 
         addRow(tbody, 'WiFi SSID', `<strong>${j?.wifi?.ssid ?? 'Not configured'}</strong>`);
         addRow(tbody, 'WiFi Password', '••••••••');
+        
+        const staticIp = j?.wifi?.static_ip;
+        if (staticIp && staticIp.length > 0) {
+          addRow(tbody, 'IP Mode', '<strong>Static IP</strong>');
+          addRow(tbody, 'IP Address', staticIp);
+          addRow(tbody, 'Gateway', j?.wifi?.gateway ?? 'Not set');
+          addRow(tbody, 'Netmask', j?.wifi?.netmask ?? 'Not set');
+        } else {
+          addRow(tbody, 'IP Mode', '<strong>DHCP</strong>');
+        }
         addRow(tbody, 'MQTT Broker URI', j?.mqtt?.uri ?? 'Not configured');
         addRow(tbody, 'Cell Voltage Min', `${fmt2(j?.battery?.cell_v_min)} <span class="value-unit">V</span>`);
         addRow(tbody, 'Cell Voltage Max', `${fmt2(j?.battery?.cell_v_max)} <span class="value-unit">V</span>`);

@@ -1,3 +1,5 @@
+/// This module implements MQTT communication.
+
 /*==============================================================================================================*/
 /*                                                Includes                                                      */
 /*==============================================================================================================*/
@@ -11,29 +13,24 @@
 #include "esp_err.h"
 #include "esp_log.h"
 
-
 /*==============================================================================================================*/
 /*                                             Private Macros                                                   */
 /*==============================================================================================================*/
 /// Log module tag used by logging module
 #define LOG_MODULE_TAG "BMS_MQTT"
 
-
 /*==============================================================================================================*/
 /*                                              Private Types                                                   */
 /*==============================================================================================================*/
-
 
 /*==============================================================================================================*/
 /*                                       Private Function Prototypes                                            */
 /*==============================================================================================================*/
 static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data);
 
-
 /*==============================================================================================================*/
 /*                                            Private Constants                                                 */
 /*==============================================================================================================*/
-
 
 /*==============================================================================================================*/
 /*                                            Private Variables                                                 */
@@ -41,14 +38,12 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
 /// Handle to MQTT client.
 static esp_mqtt_client_handle_t s_mqtt = NULL;
 
-/// True if MQTT client is connected.
+/// Flag indicating whether MQTT client is connected to the broker.
 static volatile bool s_connected = false;
-
 
 /*==============================================================================================================*/
 /*                                      Public Variables and Constants                                          */
 /*==============================================================================================================*/
-
 
 /*==============================================================================================================*/
 /*                                       Public Function Definitions                                            */
@@ -88,8 +83,7 @@ esp_err_t bms_mqtt_init(void)
     return ESP_OK;
 }
 
-
-/// This function returns true if MQTT client is connected to the broker.
+/// This function checks whether the MQTT client is currently connected to the broker.
 ///
 /// \param None
 /// \return true if connected, false otherwise
@@ -98,15 +92,13 @@ bool bms_mqtt_is_connected(void)
     return s_connected;
 }
 
-
 /// This function publishes a message with QoS 0 (fire-and-forget, no ACK).
 ///
 /// Notes:
-/// - This function requires the MQTT client to be connected.
-/// - QoS 0 = At most once delivery (no acknowledgment, no retries).
-/// - Returns immediately after sending, does not wait for broker response.
+/// 1. This function requires the MQTT client to be connected.
+/// 2. Returns immediately after sending, does not wait for broker response.
 ///
-/// \param topic MQTT topic
+/// \param topic Pointer to topic string
 /// \param data Pointer to payload buffer
 /// \param len Payload length
 /// \return ESP_OK on successful send, otherwise error
@@ -116,7 +108,7 @@ esp_err_t bms_mqtt_publish_qos0(const char *topic, const char *data, int len)
         return ESP_ERR_INVALID_STATE;
     }
 
-    // Publish with QoS 0: fire-and-forget, no PUBACK expected
+    // Publish with QoS 0, no PUBACK is expected.
     int msg_id = esp_mqtt_client_publish(s_mqtt, topic, data, len, 0, 0);
     
     if (msg_id < 0) {
@@ -127,11 +119,18 @@ esp_err_t bms_mqtt_publish_qos0(const char *topic, const char *data, int len)
     return ESP_OK;
 }
 
-
 /*==============================================================================================================*/
 /*                                       Private Function Definitions                                           */
 /*==============================================================================================================*/
-/// This function is MQTT event handler. Tracks connection state.
+/// This function is MQTT event handler. Tracks connection state. Logs connection and disconnection events.
+/// Note that parameters 'handler_args' and 'base' are unused and cannot be removed because this function is used
+/// as a callback with fixed signature of ESP-IDF event handler.
+///
+/// \param handler_args Unused
+/// \param base Unused
+/// \param event_id MQTT event ID
+/// \param event_data Pointer to event data
+/// \return None
 static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data)
 {
     (void)handler_args;

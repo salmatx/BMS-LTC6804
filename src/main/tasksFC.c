@@ -1,5 +1,5 @@
-/// This module creates and manages real-time processing tasks running on Fast Core including watchdog feeding.
-
+/// This module creates and manages real-time processing tasks. All tasks created within this module are called
+/// "Fast Core" tasks and run on Core 1 of the ESP32. Fast Core tasks perform real-time reading of BMS samples.
 
 /*==============================================================================================================*/
 /*                                                Includes                                                      */
@@ -14,21 +14,17 @@
 #include "intercore_comm.h"
 #include "logging.h"
 
-
 /*==============================================================================================================*/
 /*                                             Private Macros                                                   */
 /*==============================================================================================================*/
 /// Log module tag used by logging module
 #define LOG_MODULE_TAG "TASKS_FC"
 
-
 /// TWDT feeding period in milliseconds. Used by Fast Core feeder.
 #define WDT_FEED_MS             20
 
-
 /// Fast Core real-time processing task period in milliseconds.
 #define FAST_CORE_PERIOD_MS     50
-
 
 /*==============================================================================================================*/
 /*                                              Private Types                                                   */
@@ -40,7 +36,6 @@
 /*==============================================================================================================*/
 static void fast_core_task();
 static void fast_core_feeder_task();
-
 
 /*==============================================================================================================*/
 /*                                            Private Constants                                                 */
@@ -62,17 +57,14 @@ static TaskHandle_t s_fast_core_task_handle = NULL;
 /// TWDT task handle for Fast Core tasks
 static TaskHandle_t s_fast_core_feeder_handle = NULL;
 
-
 /*==============================================================================================================*/
 /*                                      Public Variables and Constants                                          */
 /*==============================================================================================================*/
 
-
 /*==============================================================================================================*/
 /*                                       Public Function Definitions                                            */
 /*==============================================================================================================*/
-/// This function creates all application tasks on both cores. Tasks handles are not used and thus not returned,
-/// because it is not intended to manage tasks (suspend, delete etc,) after creation.
+/// This function creates all application Fast Core tasks.
 ///
 /// \param None
 /// \return ESP_OK on success, otherwise an error code
@@ -97,9 +89,11 @@ esp_err_t fast_core_tasks_create(void)
     return ESP_OK;
 }
 
-
-/// This function deletes all Fast Core tasks. Call before entering CONFIG state.
+/// This function deletes all Fast Core tasks. Used before entering CONFIG state.
 /// Tasks will unregister from TWDT gracefully before deletion.
+///
+/// \param None
+/// \return None
 void fast_core_tasks_delete(void)
 {
     BMS_LOGI("Signaling Fast Core tasks to exit gracefully");
@@ -137,9 +131,9 @@ void fast_core_tasks_delete(void)
 /*==============================================================================================================*/
 /*                                       Private Function Definitions                                           */
 /*==============================================================================================================*/
-/// Fast Core task reads BMS samples from BMS adapter and pushes them into inter-core queue for Core 0 processing.
-/// Fast Core task runs in real-time and must complete its work within defined period, otherwise it disables feeding of
-/// the hardware TWDT, allowing it to expire and reset the system.
+/// Fast Core task reads BMS samples from BMS adapter and pushes them into inter-core queue for Slow Core (Core 0)
+/// processing. Fast Core task runs in real-time and must complete its work within defined period, otherwise it
+/// disables feeding of the hardware TWDT, allowing it to expire and reset the system.
 ///
 /// \param None
 /// \return None
@@ -178,16 +172,9 @@ static void fast_core_task()
         esp_err_t err = bms->read_sample(&sample);
         // On success, push sample into inter-core queue
         if (err == ESP_OK) {
-            // BMS_LOGI("Sample: ts=%lu ticks, cells=[%.3f, %.3f, %.3f, %.3f, %.3f] V, "
-            //          "Vpack=%.3f V, I=%.3f A",
-            //          (unsigned long)sample.timestamp,
-            //          sample.cell_v[0], sample.cell_v[1], sample.cell_v[2],
-            //          sample.cell_v[3], sample.cell_v[4],
-            //          sample.pack_v, sample.pack_i);
-
             if (!bms_queue_push(&sample)) {
+                //On next iteration bms_queue_free_slots()==0 will trip and stop tasks
                 BMS_LOGE("Failed to enqueue BMS sample (queue full or error)");
-                /* On next iteration bms_queue_free_slots()==0 will trip and stop tasks */
             }
         } else {
             BMS_LOGE("BMS read_sample failed: %s", esp_err_to_name(err));

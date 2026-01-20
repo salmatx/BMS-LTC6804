@@ -1,5 +1,6 @@
-/// This module creates and manages application tasks running on Slow Core including watchdog feeding.
-
+/// This module creates and manages application tasks. Tasks created within this module are called
+/// "Slow Core" tasks and run on Core 0 of the ESP32. Slow Core tasks perform non-real-time processing such as
+/// MQTT publishing, HTTP server handling, and application state machine execution.
 
 /*==============================================================================================================*/
 /*                                                Includes                                                      */
@@ -13,30 +14,25 @@
 #include "appsm.h"
 #include "logging.h"
 
-
 /*==============================================================================================================*/
 /*                                             Private Macros                                                   */
 /*==============================================================================================================*/
 /// Log module tag used by logging module
 #define LOG_MODULE_TAG "TASKS_SC"
 
-
-/* Slow Core SW watchdog configuration (functional, not hard RT) */
-/// Slow Core SW watchdog strobe period and timeout in miliseconds. Slow Core SW watchdog monitors duty cycle of Slow Core task.
+/// Slow Core SW watchdog strobe period and timeout in miliseconds.
+/// Slow Core SW watchdog monitors duty cycle of Slow Core task.
 /// If Slow Core task does not strobe within timeout period, HW TWDT is allowed to expire, causing system reset.
 #define CORE0_SW_STROBE_MS    1000
 /// Slow Core SW watchdog timeout in milliseconds.
 #define CORE0_SW_TIMEOUT_MS  30000
 
-
 /// TWDT feeding period in milliseconds. Used by Slow Core feeder.
 #define WDT_FEED_MS             20
-
 
 /*==============================================================================================================*/
 /*                                              Private Types                                                   */
 /*==============================================================================================================*/
-
 
 /*==============================================================================================================*/
 /*                                       Private Function Prototypes                                            */
@@ -44,11 +40,9 @@
 static void slow_core_task();
 static void slow_core_feeder_task();
 
-
 /*==============================================================================================================*/
 /*                                            Private Constants                                                 */
 /*==============================================================================================================*/
-
 
 /*==============================================================================================================*/
 /*                                            Private Variables                                                 */
@@ -62,17 +56,16 @@ static volatile bool s_should_exit_feeder = false;
 /// Task handle for Slow Core feeder (needed for deletion)
 static TaskHandle_t s_slow_core_feeder_handle = NULL;
 
-
 /*==============================================================================================================*/
 /*                                      Public Variables and Constants                                          */
 /*==============================================================================================================*/
-
 
 /*==============================================================================================================*/
 /*                                       Public Function Definitions                                            */
 /*==============================================================================================================*/
 /// This function creates application main task on Slow Core. Tasks handles are not used and thus not returned,
-/// because it is not intended to manage tasks (suspend, delete etc,) after creation.
+/// because it is intended to handle application's state machine and is not managed (suspend, delete etc,)
+/// after creation.
 ///
 /// \param None
 /// \return ESP_OK on success, otherwise an error code
@@ -90,9 +83,7 @@ esp_err_t slow_core_task_create(void)
     return ESP_OK;
 }
 
-
-/// This function creates TWDT task on Slow Core. Tasks handles are not used and thus not returned,
-/// because it is not intended to manage tasks (suspend, delete etc,) after creation.
+/// This function creates TWDT task on Slow Core. Used to feed HW TWDT periodically.
 ///
 /// \param None
 /// \return ESP_OK on success, otherwise an error code
@@ -110,9 +101,11 @@ esp_err_t slow_core_TWDT_create(void)
     return ESP_OK;
 }
 
-
 /// This function deletes Slow Core feeder task. Call when entering CONFIG state.
 /// Task will unregister from TWDT gracefully before deletion.
+///
+/// \param None
+/// \return None
 void slow_core_TWDT_delete(void)
 {
     if (s_slow_core_feeder_handle) {
@@ -127,7 +120,7 @@ void slow_core_TWDT_delete(void)
             vTaskDelay(pdMS_TO_TICKS(50));
         }
         
-        // Force delete if still running (shouldn't happen)
+        // Force delete if still running. Safeguard, should not happen.
         if (s_slow_core_feeder_handle) {
             BMS_LOGW("Force deleting Slow Core feeder task (didn't exit gracefully)");
             vTaskDelete(s_slow_core_feeder_handle);
@@ -142,17 +135,13 @@ void slow_core_TWDT_delete(void)
     }
 }
 
-
 /*==============================================================================================================*/
 /*                                       Private Function Definitions                                           */
 /*==============================================================================================================*/
-/// Slow Core task reads BMS samples from inter-core queue, computes statistics, and publishes them via MQTT.
-/// This task also monitors its own duty cycle using a software watchdog mechanism. If the task fails to complete
-/// its work within the defined timeout period, it disables feeding of the hardware TWDT, allowing it to expire
-/// and reset the system. Processing is gated so that samples are consumed only after MQTT publish
-/// is acknowledged (QoS1 PUBACK).
+/// Slow Core task handles application state machine execution and non-real-time processing. Contains infinite loop
+/// that periodically calls application state machine executor and monitors its execution time for SW watchdog purposes.
 ///
-/// \param arg Unused in current implementation and may be NULL
+/// \param None
 /// \return None
 static void slow_core_task()
 {
@@ -185,13 +174,11 @@ static void slow_core_task()
     }
 }
 
-
-
 /// Slow Core TWDT feeder task. This task periodically feeds (resets) the hardware TWDT to prevent timeout.
 /// Feeding is only performed if \ref s_allow_feeding flag is true, otherwise feeding is skipped, allowing TWDT to expire
 /// and reset the system.
 ///
-/// \param arg Unused in current implementation and may be NULL
+/// \param None
 /// \return None
 static void slow_core_feeder_task()
 {

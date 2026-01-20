@@ -1,3 +1,8 @@
+/// This module implements configuration loading and saving.
+
+/*==============================================================================================================*/
+/*                                                Includes                                                      */
+/*==============================================================================================================*/
 #include "configuration.h"
 
 #include <stdio.h>
@@ -6,8 +11,34 @@
 #include "esp_log.h"
 #include "cJSON.h"
 
+/*==============================================================================================================*/
+/*                                             Private Macros                                                   */
+/*==============================================================================================================*/
+/// Log module tag used by logging module
 #define LOG_MODULE_TAG "CFG"
 
+/*==============================================================================================================*/
+/*                                              Private Types                                                   */
+/*==============================================================================================================*/
+
+/*==============================================================================================================*/
+/*                                       Private Function Prototypes                                            */
+/*==============================================================================================================*/
+static void json_get_str(cJSON *obj, const char *key, char *out, size_t out_sz);
+static void json_get_float(cJSON *obj, const char *key, float *out);
+
+/*==============================================================================================================*/
+/*                                            Private Constants                                                 */
+/*==============================================================================================================*/
+
+/*==============================================================================================================*/
+/*                                            Private Variables                                                 */
+/*==============================================================================================================*/
+
+/*==============================================================================================================*/
+/*                                      Public Variables and Constants                                          */
+/*==============================================================================================================*/
+/// Global configuration instance
 configuration_t g_cfg = {
     .wifi = {
         .ssid = CONFIG_BMS_WIFI_SSID,
@@ -26,22 +57,13 @@ configuration_t g_cfg = {
     }
 };
 
-static void json_get_str(cJSON *obj, const char *key, char *out, size_t out_sz)
-{
-    cJSON *it = cJSON_GetObjectItem(obj, key);
-    if (cJSON_IsString(it) && it->valuestring) {
-        snprintf(out, out_sz, "%s", it->valuestring);
-    }
-}
-
-static void json_get_float(cJSON *obj, const char *key, float *out)
-{
-    cJSON *it = cJSON_GetObjectItem(obj, key);
-    if (cJSON_IsNumber(it)) {
-        *out = (float)it->valuedouble;
-    }
-}
-
+/*==============================================================================================================*/
+/*                                       Public Function Definitions                                            */
+/*==============================================================================================================*/
+/// This function loads the configuration from a JSON file at the specified path into the global configuration instance.
+///
+/// \param path Path to configuration file
+/// \return ESP_OK on success, otherwise an error code
 esp_err_t configuration_load(const char *path)
 {
     FILE *f = fopen(path, "rb");
@@ -85,6 +107,10 @@ esp_err_t configuration_load(const char *path)
     return ESP_OK;
 }
 
+/// This function saves the global configuration instance to a JSON file at the specified path.
+///
+/// \param path Path to configuration file
+/// \return ESP_OK on success, otherwise an error code
 esp_err_t configuration_save(const char *path)
 {
     cJSON *root = cJSON_CreateObject();
@@ -140,4 +166,36 @@ esp_err_t configuration_save(const char *path)
 
     ESP_LOGI(LOG_MODULE_TAG, "Config saved to %s", path);
     return ESP_OK;
+}
+
+/*==============================================================================================================*/
+/*                                       Private Function Definitions                                           */
+/*==============================================================================================================*/
+/// This helper function retrieves a string value from a cJSON object by key.
+///
+/// \param obj Pointer to cJSON object
+/// \param key Key of the string item
+/// \param out Output buffer for the string
+/// \param out_sz Size of the output buffer
+/// \return None
+static void json_get_str(cJSON *obj, const char *key, char *out, size_t out_sz)
+{
+    cJSON *it = cJSON_GetObjectItem(obj, key);
+    if (cJSON_IsString(it) && it->valuestring) {
+        snprintf(out, out_sz, "%s", it->valuestring);
+    }
+}
+
+/// This helper function retrieves a float value from a cJSON object by key.
+///
+/// \param obj Pointer to cJSON object
+/// \param key Key of the number item
+/// \param out Pointer to output float variable
+/// \return None
+static void json_get_float(cJSON *obj, const char *key, float *out)
+{
+    cJSON *it = cJSON_GetObjectItem(obj, key);
+    if (cJSON_IsNumber(it)) {
+        *out = (float)it->valuedouble;
+    }
 }

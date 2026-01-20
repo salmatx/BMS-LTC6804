@@ -45,7 +45,7 @@ void app_main(void);
 /*==============================================================================================================*/
 /*                                       Private Function Definitions                                           */
 /*==============================================================================================================*/
-/// Main application entry point. Initializes all necessary modules and starts application tasks.
+/// Main application entry point. Initializes necessary modules and starts application slow core tasks.
 ///
 /// \param None
 /// \return None
