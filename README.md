@@ -23,6 +23,10 @@ Projects uses ESP-IDF framework. It is recommended to use sdkconfig settings as 
 
 - Set configTICK_RATE_HZ to 1000 Hz
 
+**Serial flasher config --> Flash size**
+
+- Set Flash size to 4MB
+
 **BMS Network Configuration**
 
 - Set Wi-Fi SSID of used AP
