@@ -166,7 +166,9 @@ static bool check_config_mode_flag(void)
 
 /// This function handles the CONFIG application state. Function halts cpu for 1 second
 /// in each call to reduce cpu load during configuration mode.
-/// Note that retrun is always APP_ST_CONFIG to remain in configuration state until the nerxt reboot.
+/// In CONFIG state, HTTP server remains active for web-based configuration.
+/// Device stays in this state until user saves configuration and triggers a reboot.
+/// Note that return is always APP_ST_CONFIG to remain in configuration state until the next reboot.
 ///
 /// \param None
 /// \return Next application state (always APP_ST_CONFIG)
@@ -329,19 +331,27 @@ static void state_input_handler(void)
                 break;
 
             case APP_ST_CONFIG:
-                BMS_LOGI("Entering CONFIG state - cleaning up tasks and disabling watchdogs");
+                BMS_LOGI("Entering CONFIG state");
                 
-                // 1. Delete all Fast Core tasks (Core 1)
-                fast_core_tasks_delete();
-                
-                // 2. Delete Slow Core feeder task
-                slow_core_TWDT_delete();
-                
-                // 3. Give tasks time to clean up
-                vTaskDelay(pdMS_TO_TICKS(100));
-                
-                // 4. Deinitialize TWDT (all tasks unregistered by now)
-                bms_wdt_deinit();
+                // Only clean up tasks if coming from PROCESSING state
+                // (tasks are not created when entering CONFIG from INIT due to AP mode)
+                if (s_appsm.prev_state == APP_ST_PROCESSING) {
+                    BMS_LOGI("Cleaning up tasks and disabling watchdogs");
+                    
+                    // 1. Delete all Fast Core tasks (Core 1)
+                    fast_core_tasks_delete();
+                    
+                    // 2. Delete Slow Core feeder task
+                    slow_core_TWDT_delete();
+                    
+                    // 3. Give tasks time to clean up
+                    vTaskDelay(pdMS_TO_TICKS(100));
+                    
+                    // 4. Deinitialize TWDT (all tasks unregistered by now)
+                    bms_wdt_deinit();
+                } else {
+                    BMS_LOGI("Entering CONFIG state from INIT (AP mode) - HTTP server active for configuration");
+                }
                 break;
 
             default:
@@ -362,7 +372,10 @@ static void state_output_handler(void)
         switch (s_appsm.curr_state)
         {
             case APP_ST_INIT:
-                slow_core_TWDT_create();
+                // Only create slow core TWDT task if transitioning to PROCESSING
+                if (s_appsm.next_state == APP_ST_PROCESSING) {
+                    slow_core_TWDT_create();
+                }
                 break;
 
             case APP_ST_PROCESSING:

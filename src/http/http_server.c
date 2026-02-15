@@ -20,6 +20,7 @@
 #include "configuration.h"
 #include "bms_data.h"
 #include "cJSON.h"
+#include "wifi.h"
 
 /*==============================================================================================================*/
 /*                                             Private Macros                                                   */
@@ -488,14 +489,23 @@ static esp_err_t h_config_cancel(httpd_req_t *req)
     return send_err;
 }
 
-/// This is the GET handler for root endpoint that redirects to main BMS page. It sends HTTP 302 redirect response.
+/// This is the GET handler for root endpoint that redirects to main BMS page or config page.
+/// If device is in AP mode, redirects to /bms/config for configuration.
+/// Otherwise, redirects to /bms (main page).
 ///
 /// \param req Pointer to HTTP request structure
 /// \return ESP_OK on success, otherwise an error code
 static esp_err_t h_root_redirect(httpd_req_t *req)
 {
     httpd_resp_set_status(req, "302 Found");
-    httpd_resp_set_hdr(req, "Location", "/bms");
+    
+    // If in AP mode, redirect to config page
+    if (bms_wifi_is_ap_mode()) {
+        httpd_resp_set_hdr(req, "Location", "/bms/config");
+    } else {
+        httpd_resp_set_hdr(req, "Location", "/bms");
+    }
+    
     return httpd_resp_send(req, NULL, 0);
 }
 

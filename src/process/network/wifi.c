@@ -26,6 +26,12 @@
 #define WIFI_CONNECTED_BIT BIT0
 /// Default netmask if none is configured and static IP is used
 #define DEFAULT_NETMASK "255.255.255.0"
+/// AP mode SSID when WiFi connection fails
+#define AP_SSID "BMS_LTC6804"
+/// AP mode password (minimum 8 characters for WPA2)
+#define AP_PASSWORD "bms12345"
+/// Maximum number of stations allowed to connect to AP
+#define AP_MAX_CONNECTIONS 4
 
 /*==============================================================================================================*/
 /*                                              Private Types                                                   */
@@ -45,6 +51,8 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 /*==============================================================================================================*/
 /// Event group to signal when WiFi is connected
 static EventGroupHandle_t s_wifi_event_group;
+/// Flag to track if device is running in AP mode
+static bool s_is_ap_mode = false;
 
 /*==============================================================================================================*/
 /*                                      Public Variables and Constants                                          */
@@ -156,17 +164,97 @@ esp_err_t bms_wifi_init(void)
                                            pdFALSE, pdFALSE,
                                            pdMS_TO_TICKS(10000));
     if (!(bits & WIFI_CONNECTED_BIT)) {
-        BMS_LOGE("WiFi connect timeout");
-        return ESP_FAIL;
+        BMS_LOGW("WiFi STA mode connect timeout, switching to AP mode");
+        
+        // Clean up STA mode
+        esp_wifi_stop();
+        esp_wifi_deinit();
+        esp_event_handler_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler);
+        esp_event_handler_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler);
+        
+        // Destroy STA netif
+        esp_netif_destroy(netif);
+        
+        // Create AP network interface (required for DHCP server and IP routing)
+        esp_netif_t *ap_netif = esp_netif_create_default_wifi_ap();
+        if (!ap_netif) {
+            BMS_LOGE("Failed to create AP network interface");
+            return ESP_FAIL;
+        }
+        
+        // Reinitialize WiFi for AP mode
+        wifi_init_config_t cfg_ap = WIFI_INIT_CONFIG_DEFAULT();
+        ESP_ERROR_CHECK(esp_wifi_init(&cfg_ap));
+        
+        // Start AP mode as fallback
+        esp_err_t err = bms_wifi_start_ap();
+        if (err != ESP_OK) {
+            BMS_LOGE("Failed to start AP mode: %s", esp_err_to_name(err));
+            return ESP_FAIL;
+        }
+        
+        s_is_ap_mode = true;
+        return ESP_OK;
     }
 
-    BMS_LOGI("WiFi connected");
+    s_is_ap_mode = false;
+    BMS_LOGI("WiFi connected in STA mode");
     return ESP_OK;
 }
 
 /*==============================================================================================================*/
 /*                                       Public Function Definitions                                            */
 /*==============================================================================================================*/
+/// This function starts WiFi in Access Point (AP) mode with predefined credentials.
+/// Used as fallback when STA mode connection fails.
+///
+/// \param None
+/// \return ESP_OK on success, otherwise an error code
+esp_err_t bms_wifi_start_ap(void)
+{
+    // Configure AP mode
+    wifi_config_t ap_config = {
+        .ap = {
+            .ssid = AP_SSID,
+            .ssid_len = strlen(AP_SSID),
+            .password = AP_PASSWORD,
+            .max_connection = AP_MAX_CONNECTIONS,
+            .authmode = WIFI_AUTH_WPA2_PSK,
+            .channel = 1,
+        },
+    };
+
+    // Set WiFi mode to AP
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap_config));
+    ESP_ERROR_CHECK(esp_wifi_start());
+
+    BMS_LOGI("╔══════════════════════════════════════════════════════╗");
+    BMS_LOGI("║         WiFi AP MODE - Configuration Portal          ║");
+    BMS_LOGI("╠══════════════════════════════════════════════════════╣");
+    BMS_LOGI("║  SSID:     %s                               ║", AP_SSID);
+    BMS_LOGI("║  Password: %s                                  ║", AP_PASSWORD);
+    BMS_LOGI("║  IP:       192.168.4.1                               ║");
+    BMS_LOGI("║  HTTP:     http://192.168.4.1                        ║");
+    BMS_LOGI("╠══════════════════════════════════════════════════════╣");
+    BMS_LOGI("║  Steps:                                              ║");
+    BMS_LOGI("║  1. Connect to WiFi '%s'                    ║", AP_SSID);
+    BMS_LOGI("║  2. Open browser: http://192.168.4.1                 ║");
+    BMS_LOGI("║  3. Configure WiFi credentials                       ║");
+    BMS_LOGI("║  4. Device will restart with new settings            ║");
+    BMS_LOGI("╚══════════════════════════════════════════════════════╝");
+
+    return ESP_OK;
+}
+
+/// This function checks if WiFi is currently running in AP mode.
+///
+/// \param None
+/// \return true if in AP mode, false if in STA mode
+bool bms_wifi_is_ap_mode(void)
+{
+    return s_is_ap_mode;
+}
 
 /*==============================================================================================================*/
 /*                                       Private Function Definitions                                           */

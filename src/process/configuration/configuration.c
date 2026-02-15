@@ -56,7 +56,7 @@ configuration_t g_cfg = {
     },
     .battery = {
         .num_cells      = 5,
-        .current_enable = true,
+        .current_enable = false,
         .cell_v_min     = 0.5f,
         .cell_v_max     = 2.0f,
         .pack_v_min     = 2.5f,
