@@ -6,10 +6,12 @@
 #include "configuration.h"
 
 #include <stdio.h>
+#include <stdbool.h>
 #include <string.h>
 #include "sdkconfig.h"
 #include "esp_log.h"
 #include "cJSON.h"
+#include "bms_data.h"
 
 /*==============================================================================================================*/
 /*                                             Private Macros                                                   */
@@ -26,6 +28,8 @@
 /*==============================================================================================================*/
 static void json_get_str(cJSON *obj, const char *key, char *out, size_t out_sz);
 static void json_get_float(cJSON *obj, const char *key, float *out);
+static void json_get_int(cJSON *obj, const char *key, int *out);
+static void json_get_bool(cJSON *obj, const char *key, bool *out);
 
 /*==============================================================================================================*/
 /*                                            Private Constants                                                 */
@@ -51,12 +55,14 @@ configuration_t g_cfg = {
         .uri  = CONFIG_BMS_MQTT_BROKER_URI,
     },
     .battery = {
-        .cell_v_min   = 0.5f,
-        .cell_v_max   = 2.0f,
-        .pack_v_min   = 2.5f,
-        .pack_v_max   = 10.0f,
-        .current_min  = -5.0f,
-        .current_max  = 5.0f
+        .num_cells      = 5,
+        .current_enable = true,
+        .cell_v_min     = 0.5f,
+        .cell_v_max     = 2.0f,
+        .pack_v_min     = 2.5f,
+        .pack_v_max     = 10.0f,
+        .current_min    = -5.0f,
+        .current_max    = 5.0f
     }
 };
 
@@ -100,6 +106,12 @@ esp_err_t configuration_load(const char *path)
 
     cJSON *jbatt = cJSON_GetObjectItem(root, "battery");
     if (cJSON_IsObject(jbatt)) {
+        int num_cells = (int)g_cfg.battery.num_cells;
+        json_get_int(jbatt, "num_cells", &num_cells);
+        if (num_cells < 1) num_cells = 1;
+        if (num_cells > BMS_MAX_CELLS) num_cells = BMS_MAX_CELLS;
+        g_cfg.battery.num_cells = (uint8_t)num_cells;
+        json_get_bool(jbatt, "current_enable", &g_cfg.battery.current_enable);
         json_get_float(jbatt, "cell_v_min",  &g_cfg.battery.cell_v_min);
         json_get_float(jbatt, "cell_v_max",  &g_cfg.battery.cell_v_max);
         json_get_float(jbatt, "pack_v_min",  &g_cfg.battery.pack_v_min);
@@ -138,6 +150,8 @@ esp_err_t configuration_save(const char *path)
 
     // Battery configuration
     cJSON *jbatt = cJSON_CreateObject();
+    cJSON_AddNumberToObject(jbatt, "num_cells", g_cfg.battery.num_cells);
+    cJSON_AddBoolToObject(jbatt, "current_enable", g_cfg.battery.current_enable);
     cJSON_AddNumberToObject(jbatt, "cell_v_min", g_cfg.battery.cell_v_min);
     cJSON_AddNumberToObject(jbatt, "cell_v_max", g_cfg.battery.cell_v_max);
     cJSON_AddNumberToObject(jbatt, "pack_v_min", g_cfg.battery.pack_v_min);
@@ -206,5 +220,33 @@ static void json_get_float(cJSON *obj, const char *key, float *out)
     cJSON *it = cJSON_GetObjectItem(obj, key);
     if (cJSON_IsNumber(it)) {
         *out = (float)it->valuedouble;
+    }
+}
+
+/// This helper function retrieves an integer value from a cJSON object by key.
+///
+/// \param obj Pointer to cJSON object
+/// \param key Key of the number item
+/// \param out Pointer to output int variable
+/// \return None
+static void json_get_int(cJSON *obj, const char *key, int *out)
+{
+    cJSON *it = cJSON_GetObjectItem(obj, key);
+    if (cJSON_IsNumber(it)) {
+        *out = it->valueint;
+    }
+}
+
+/// This helper function retrieves a boolean value from a cJSON object by key.
+///
+/// \param obj Pointer to cJSON object
+/// \param key Key of the boolean item
+/// \param out Pointer to output bool variable
+/// \return None
+static void json_get_bool(cJSON *obj, const char *key, bool *out)
+{
+    cJSON *it = cJSON_GetObjectItem(obj, key);
+    if (cJSON_IsBool(it)) {
+        *out = cJSON_IsTrue(it) ? true : false;
     }
 }

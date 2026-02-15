@@ -18,6 +18,7 @@
 #include "logging.h"
 #include "stats_history.h"
 #include "configuration.h"
+#include "bms_data.h"
 #include "cJSON.h"
 
 /*==============================================================================================================*/
@@ -280,6 +281,8 @@ static esp_err_t h_config_data(httpd_req_t *req)
     cJSON_AddStringToObject(mqtt, "uri", g_cfg.mqtt.uri);
 
     cJSON_AddItemToObject(root, "battery", bat);
+    cJSON_AddNumberToObject(bat, "num_cells", g_cfg.battery.num_cells);
+    cJSON_AddBoolToObject(bat, "current_enable", g_cfg.battery.current_enable);
     cJSON_AddNumberToObject(bat, "cell_v_min", g_cfg.battery.cell_v_min);
     cJSON_AddNumberToObject(bat, "cell_v_max", g_cfg.battery.cell_v_max);
     cJSON_AddNumberToObject(bat, "pack_v_min", g_cfg.battery.pack_v_min);
@@ -390,6 +393,18 @@ static esp_err_t h_config_save(httpd_req_t *req)
     }
     
     // Parse battery parameters and round to 2 decimal places
+    if (parse_post_param(buf, "num_cells", value, sizeof(value)) == ESP_OK) {
+        int nc = atoi(value);
+        if (nc < 1) nc = 1;
+        if (nc > BMS_MAX_CELLS) nc = BMS_MAX_CELLS;
+        g_cfg.battery.num_cells = (uint8_t)nc;
+    }
+    if (parse_post_param(buf, "current_enable", value, sizeof(value)) == ESP_OK) {
+        g_cfg.battery.current_enable = (strcmp(value, "1") == 0 || strcmp(value, "on") == 0 || strcmp(value, "true") == 0);
+    } else {
+        // Checkbox not present in POST data means unchecked
+        g_cfg.battery.current_enable = false;
+    }
     if (parse_post_param(buf, "cell_v_min", value, sizeof(value)) == ESP_OK) {
         g_cfg.battery.cell_v_min = roundf(atof(value) * 100.0f) / 100.0f;
     }

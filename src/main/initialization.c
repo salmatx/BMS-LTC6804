@@ -75,7 +75,7 @@ bool initialization_exec(void)
         return false;
     }
 
-    // Select and initialize BMS adapter (demo adapter in current implementation)
+    // Select and initialize BMS adapter
     err = bms_demo_adapter_select();
     if (err != ESP_OK) {
         BMS_LOGE("BMS adapter init failed: %s", esp_err_to_name(err));

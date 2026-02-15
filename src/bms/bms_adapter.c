@@ -4,6 +4,7 @@
 /*                                                Includes                                                      */
 /*==============================================================================================================*/
 #include "bms_adapter.h"
+#include "ltc6804.h"
 #include "configuration.h"
 #include "logging.h"
 #include "esp_log.h"
@@ -30,6 +31,8 @@ static uint32_t demo_rand32(void);
 static float demo_rand01(void);
 static esp_err_t demo_init(void);
 static esp_err_t demo_read_sample(bms_sample_t *out);
+static esp_err_t ltc6804_adapter_init(void);
+static esp_err_t ltc6804_adapter_read_sample(bms_sample_t *out);
 
 /*==============================================================================================================*/
 /*                                            Private Constants                                                 */
@@ -41,6 +44,12 @@ static const bms_adapter_t *s_current_adapter = NULL;
 static const bms_adapter_t s_demo_adapter = {
     .init        = demo_init,
     .read_sample = demo_read_sample,
+};
+
+/// LTC6804 hardware adapter instance
+static const bms_adapter_t s_ltc6804_adapter = {
+    .init        = ltc6804_adapter_init,
+    .read_sample = ltc6804_adapter_read_sample,
 };
 
 /*==============================================================================================================*/
@@ -69,6 +78,15 @@ esp_err_t bms_demo_adapter_select(void)
 const bms_adapter_t *bms_get_adapter(void)
 {
     return s_current_adapter;
+}
+
+/// This function selects and initializes the LTC6804 hardware BMS adapter.
+/// \param None
+/// \return ESP_OK on success, otherwise an error code
+esp_err_t bms_ltc6804_adapter_select(void)
+{
+    s_current_adapter = &s_ltc6804_adapter;
+    return s_current_adapter->init();
 }
 
 /*==============================================================================================================*/
@@ -145,7 +163,7 @@ static esp_err_t demo_read_sample(bms_sample_t *out)
     // Voltage of whole battery pack
     float pack_v = 0.0f;
 
-    for (int i = 0; i < BMS_NUM_CELLS; ++i) {
+    for (int i = 0; i < g_cfg.battery.num_cells; ++i) {
         // Generate voltage withing configured min/max limits
         float r = demo_rand01();
         float v = g_cfg.battery.cell_v_min + r * (g_cfg.battery.cell_v_max - g_cfg.battery.cell_v_min);
@@ -166,9 +184,63 @@ static esp_err_t demo_read_sample(bms_sample_t *out)
 
     out->pack_v = pack_v;
 
-    // Generate random pack current within configured min/max limits
-    float ir = demo_rand01();
-    out->pack_i = g_cfg.battery.current_min + ir * g_cfg.battery.current_max * 2.0f;
+    // Generate random pack current within configured min/max limits (only if current measurement enabled)
+    if (g_cfg.battery.current_enable) {
+        float ir = demo_rand01();
+        out->pack_i = g_cfg.battery.current_min + ir * g_cfg.battery.current_max * 2.0f;
+    } else {
+        out->pack_i = 0.0f;
+    }
+
+    // Set timestamp
+    out->timestamp = xTaskGetTickCount();
+
+    return ESP_OK;
+}
+
+/// This function initializes the LTC6804 hardware adapter by calling the LTC6804 ADC module init.
+///
+/// \param None
+/// \return ESP_OK on success, otherwise an error code
+static esp_err_t ltc6804_adapter_init(void)
+{
+    esp_err_t ret = ltc6804_init();
+    if (ret != ESP_OK) {
+        BMS_LOGE("LTC6804 adapter init failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    BMS_LOGI("LTC6804 hardware BMS adapter initialized");
+    return ESP_OK;
+}
+
+/// This function reads one BMS sample from the LTC6804 hardware. It reads cell voltages
+/// from the LTC6804 ADC module, sums them for pack voltage, and handles pack current
+/// based on the current_enable configuration flag.
+///
+/// \param out Pointer to output sample structure
+/// \return ESP_OK on success, otherwise an error code
+static esp_err_t ltc6804_adapter_read_sample(bms_sample_t *out)
+{
+    if (!out) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    // Read cell voltages from LTC6804 (includes internal retries)
+    esp_err_t ret = ltc6804_read_cell_voltages(out->cell_v, g_cfg.battery.num_cells);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+
+    // Compute pack voltage as sum of cell voltages
+    float pack_v = 0.0f;
+    for (int i = 0; i < g_cfg.battery.num_cells; ++i) {
+        pack_v += out->cell_v[i];
+    }
+    out->pack_v = pack_v;
+
+    // Pack current: LTC6804 does not measure current — set to 0.
+    // If current measurement is needed, it should be handled by a separate sensor module.
+    out->pack_i = 0.0f;
 
     // Set timestamp
     out->timestamp = xTaskGetTickCount();

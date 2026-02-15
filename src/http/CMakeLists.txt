@@ -6,6 +6,7 @@ idf_component_register(
         "."
     REQUIRES
         common
+        bms
         esp_http_server
         configuration
         json

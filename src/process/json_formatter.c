@@ -6,6 +6,7 @@
 /*==============================================================================================================*/
 #include "logging.h"
 #include "json_formatter.h"
+#include "configuration.h"
 #include <stdio.h>
 
 /*==============================================================================================================*/
@@ -13,6 +14,18 @@
 /*==============================================================================================================*/
 /// Log module tag used by logging module
 #define LOG_MODULE_TAG "BMS_JSON"
+
+/// Helper macro for JSON buffer append. Checks snprintf return value and remaining buffer space.
+/// If truncation or error occurs, logs error and returns -1.
+#define JSON_APPEND(off, buf, buf_size, ...)                                    \
+    do {                                                                        \
+        int _ret = snprintf((buf) + (off), (buf_size) - (off), __VA_ARGS__);    \
+        if (_ret < 0 || (size_t)((off) + _ret) >= (buf_size)) {                 \
+            BMS_LOGE("JSON serialization truncated or failed");                 \
+            return -1;                                                          \
+        }                                                                       \
+        (off) += _ret;                                                          \
+    } while (0)
 
 /*==============================================================================================================*/
 /*                                              Private Types                                                   */
@@ -49,44 +62,53 @@ int bms_stats_to_json(const bms_stats_t *st, char *buf, size_t buf_size)
         return -1;
     }
 
-    // Format statistics into JSON string and write into buffer
-    int len = snprintf(buf, buf_size,
-        "{"
-          "\"timestamp\":%u,"
-          "\"sample_count\":%u,"
-          "\"cell_errors\":%u,"
-          "\"cell_v_avg\":[%.3f,%.3f,%.3f,%.3f,%.3f],"
-          "\"cell_v_min\":[%.3f,%.3f,%.3f,%.3f,%.3f],"
-          "\"cell_v_max\":[%.3f,%.3f,%.3f,%.3f,%.3f],"
-          "\"pack_v_avg\":%.3f,"
-          "\"pack_v_min\":%.3f,"
-          "\"pack_v_max\":%.3f,"
-          "\"pack_i_avg\":%.3f,"
-          "\"pack_i_min\":%.3f,"
-          "\"pack_i_max\":%.3f"
-        "}",
+    const int nc = g_cfg.battery.num_cells;
+    int off = 0;
+
+    // Opening brace + fixed scalar fields
+    JSON_APPEND(off, buf, buf_size,
+        "{\"timestamp\":%u,\"sample_count\":%u,\"cell_errors\":%u,",
         (unsigned)st->timestamp,
         (unsigned)st->sample_count,
-        (unsigned)st->cell_errors,
-        st->cell_v_avg[0], st->cell_v_avg[1], st->cell_v_avg[2],
-        st->cell_v_avg[3], st->cell_v_avg[4],
-        st->cell_v_min[0], st->cell_v_min[1], st->cell_v_min[2],
-        st->cell_v_min[3], st->cell_v_min[4],
-        st->cell_v_max[0], st->cell_v_max[1], st->cell_v_max[2],
-        st->cell_v_max[3], st->cell_v_max[4],
-        st->pack_v_avg,
-        st->pack_v_min,
-        st->pack_v_max,
-        st->pack_i_avg,
-        st->pack_i_min,
-        st->pack_i_max
-    );
+        (unsigned)st->cell_errors);
 
-    if (len < 0 || (size_t)len >= buf_size) {
-        BMS_LOGE("JSON serialization truncated or failed");
-        return -1;
+    // cell_v_avg array
+    JSON_APPEND(off, buf, buf_size, "\"cell_v_avg\":[");
+    for (int i = 0; i < nc; ++i) {
+        JSON_APPEND(off, buf, buf_size, "%s%.3f", i ? "," : "", st->cell_v_avg[i]);
     }
-    return len;
+    JSON_APPEND(off, buf, buf_size, "],");
+
+    // cell_v_min array
+    JSON_APPEND(off, buf, buf_size, "\"cell_v_min\":[");
+    for (int i = 0; i < nc; ++i) {
+        JSON_APPEND(off, buf, buf_size, "%s%.3f", i ? "," : "", st->cell_v_min[i]);
+    }
+    JSON_APPEND(off, buf, buf_size, "],");
+
+    // cell_v_max array
+    JSON_APPEND(off, buf, buf_size, "\"cell_v_max\":[");
+    for (int i = 0; i < nc; ++i) {
+        JSON_APPEND(off, buf, buf_size, "%s%.3f", i ? "," : "", st->cell_v_max[i]);
+    }
+    JSON_APPEND(off, buf, buf_size, "],");
+
+    // Pack voltage fields
+    JSON_APPEND(off, buf, buf_size,
+        "\"pack_v_avg\":%.3f,\"pack_v_min\":%.3f,\"pack_v_max\":%.3f",
+        st->pack_v_avg, st->pack_v_min, st->pack_v_max);
+
+    // Pack current fields (only if current measurement is enabled)
+    if (g_cfg.battery.current_enable) {
+        JSON_APPEND(off, buf, buf_size,
+            ",\"pack_i_avg\":%.3f,\"pack_i_min\":%.3f,\"pack_i_max\":%.3f",
+            st->pack_i_avg, st->pack_i_min, st->pack_i_max);
+    }
+
+    // Closing brace
+    JSON_APPEND(off, buf, buf_size, "}");
+
+    return off;
 }
 
 /*==============================================================================================================*/

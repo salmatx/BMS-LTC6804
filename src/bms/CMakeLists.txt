@@ -2,9 +2,11 @@ idf_component_register(
     SRCS
         "bms_adapter.c"
         "intercore_comm.c"
+        "ltc6804.c"
     INCLUDE_DIRS
         "."
     REQUIRES
         common
         configuration
+        driver
 )

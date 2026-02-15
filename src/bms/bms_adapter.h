@@ -33,6 +33,7 @@ typedef struct {
 /*                                        Public Function Prototypes                                            */
 /*==============================================================================================================*/
 esp_err_t bms_demo_adapter_select(void);
+esp_err_t bms_ltc6804_adapter_select(void);
 const bms_adapter_t *bms_get_adapter(void);
 
 /*==============================================================================================================*/

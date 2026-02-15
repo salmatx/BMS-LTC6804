@@ -53,7 +53,22 @@
       </div>
 
       <!-- Battery Configuration -->
-      <h2>Battery Thresholds</h2>
+      <h2>Battery Settings</h2>
+      <div class="grid">
+        <div class="form-group">
+          <label for="num_cells">Number of Cells:</label>
+          <input type="number" id="num_cells" name="num_cells" step="1" min="1" max="12" required>
+        </div>
+        <div class="form-group">
+          <label for="current_enable">Current Measurement:</label>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:4px;">
+            <input type="checkbox" id="current_enable" name="current_enable" value="1" style="width:auto;">
+            <span>Enable</span>
+          </div>
+        </div>
+      </div>
+
+      <h3>Voltage Thresholds</h3>
       <div class="grid">
         <div class="form-group">
           <label for="cell_v_min">Cell Min Voltage (V):</label>
@@ -76,6 +91,7 @@
         </div>
       </div>
 
+      <h3>Current Thresholds</h3>
       <div class="grid">
         <div class="form-group">
           <label for="current_min">Min Current (A):</label>
@@ -112,6 +128,8 @@
           document.getElementById('wifi_gateway').value = data.wifi.gateway || '';
           document.getElementById('wifi_netmask').value = data.wifi.netmask || '';
           document.getElementById('mqtt_uri').value = data.mqtt.uri || '';
+          document.getElementById('num_cells').value = data.battery.num_cells || 5;
+          document.getElementById('current_enable').checked = data.battery.current_enable !== false;
           document.getElementById('cell_v_min').value = fmt2(data.battery.cell_v_min) || '2.80';
           document.getElementById('cell_v_max').value = fmt2(data.battery.cell_v_max) || '4.20';
           document.getElementById('pack_v_min').value = fmt2(data.battery.pack_v_min) || '39.00';

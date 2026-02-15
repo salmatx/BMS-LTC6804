@@ -83,12 +83,18 @@
           addRow(tbody, 'IP Mode', '<strong>DHCP</strong>');
         }
         addRow(tbody, 'MQTT Broker URI', j?.mqtt?.uri ?? 'Not configured');
+        addRow(tbody, 'Number of Cells', `<strong>${j?.battery?.num_cells ?? 5}</strong>`);
+        addRow(tbody, 'Current Measurement', j?.battery?.current_enable !== false
+          ? '<strong style="color:green;">Enabled</strong>'
+          : '<strong style="color:gray;">Disabled</strong>');
         addRow(tbody, 'Cell Voltage Min', `${fmt2(j?.battery?.cell_v_min)} <span class="value-unit">V</span>`);
         addRow(tbody, 'Cell Voltage Max', `${fmt2(j?.battery?.cell_v_max)} <span class="value-unit">V</span>`);
         addRow(tbody, 'Pack Voltage Min', `${fmt2(j?.battery?.pack_v_min)} <span class="value-unit">V</span>`);
         addRow(tbody, 'Pack Voltage Max', `${fmt2(j?.battery?.pack_v_max)} <span class="value-unit">V</span>`);
-        addRow(tbody, 'Current Min', `${fmt2(j?.battery?.current_min)} <span class="value-unit">A</span>`);
-        addRow(tbody, 'Current Max', `${fmt2(j?.battery?.current_max)} <span class="value-unit">A</span>`);
+        if (j?.battery?.current_enable !== false) {
+          addRow(tbody, 'Current Min', `${fmt2(j?.battery?.current_min)} <span class="value-unit">A</span>`);
+          addRow(tbody, 'Current Max', `${fmt2(j?.battery?.current_max)} <span class="value-unit">A</span>`);
+        }
 
         loadingMsg.style.display = 'none';
         table.style.display = 'table';

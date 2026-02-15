@@ -5,6 +5,9 @@
 /*==============================================================================================================*/
 #pragma once
 
+#include <stdint.h>
+#include <stdbool.h>
+
 /*==============================================================================================================*/
 /*                                               Public Macros                                                  */
 /*==============================================================================================================*/
@@ -14,12 +17,14 @@
 /*==============================================================================================================*/
 /// Structure defining BMS configuration parameters for measured battery pack
 typedef struct {
-    float cell_v_min;     ///< Minimum per-cell voltage
-    float cell_v_max;     ///< Maximum per-cell voltage
-    float pack_v_min;     ///< Minimum total pack voltage
-    float pack_v_max;     ///< Maximum total pack voltage
-    float current_min;    ///< Minimum current of the pack
-    float current_max;    ///< Maximum current of the pack
+    uint8_t num_cells;       ///< Number of cells in the battery pack (runtime configurable)
+    bool    current_enable;  ///< Enable current measurement (true = measure, false = skip)
+    float   cell_v_min;      ///< Minimum per-cell voltage
+    float   cell_v_max;      ///< Maximum per-cell voltage
+    float   pack_v_min;      ///< Minimum total pack voltage
+    float   pack_v_max;      ///< Maximum total pack voltage
+    float   current_min;     ///< Minimum current of the pack
+    float   current_max;     ///< Maximum current of the pack
 } bms_config_t;
 
 /*==============================================================================================================*/

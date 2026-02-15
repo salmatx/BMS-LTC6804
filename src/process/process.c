@@ -185,7 +185,7 @@ void remove_processed_samples(bms_sample_buffer_t *buf, int sample_count)
 /// \return None
 static void check_limits_sample(const bms_sample_t *s, bms_stats_t *flags)
 {
-    for (int i = 0; i < BMS_NUM_CELLS; ++i) {
+    for (int i = 0; i < g_cfg.battery.num_cells; ++i) {
         float v = s->cell_v[i];
         if (v < g_cfg.battery.cell_v_min) {
             // Undervolatage bit
@@ -197,13 +197,15 @@ static void check_limits_sample(const bms_sample_t *s, bms_stats_t *flags)
         }
     }
 
-    if (s->pack_i < g_cfg.battery.current_min) {
-        // Undercurrent bit
-        flags->cell_errors |= 0x0800u;
-    }
-    if (s->pack_i > g_cfg.battery.current_max) {
-        // Overcurrent bit
-        flags->cell_errors |= 0x1000u;
+    if (g_cfg.battery.current_enable) {
+        if (s->pack_i < g_cfg.battery.current_min) {
+            // Undercurrent bit
+            flags->cell_errors |= 0x0800u;
+        }
+        if (s->pack_i > g_cfg.battery.current_max) {
+            // Overcurrent bit
+            flags->cell_errors |= 0x1000u;
+        }
     }
 }
 
@@ -220,7 +222,7 @@ static void init_stats_from_first(const bms_sample_t *raw_sample, bms_stats_t *o
     out->sample_count  = 0;
     out->cell_errors = 0;
 
-    for (int c = 0; c < BMS_NUM_CELLS; ++c) {
+    for (int c = 0; c < g_cfg.battery.num_cells; ++c) {
         float v = raw_sample->cell_v[c];
         out->cell_v_min[c] = v;
         out->cell_v_max[c] = v;
@@ -259,7 +261,7 @@ static void bms_sample_zero(bms_sample_t *sample)
 /// \return None
 static void accumulate_sample(const bms_sample_t *raw_sample, bms_stats_t *out)
 {
-    for (int c = 0; c < BMS_NUM_CELLS; ++c) {
+    for (int c = 0; c < g_cfg.battery.num_cells; ++c) {
         float v = raw_sample->cell_v[c];
         out->cell_v_avg[c] += v;
         if (v < out->cell_v_min[c]) out->cell_v_min[c] = v;
@@ -270,9 +272,11 @@ static void accumulate_sample(const bms_sample_t *raw_sample, bms_stats_t *out)
     if (raw_sample->pack_v < out->pack_v_min) out->pack_v_min = raw_sample->pack_v;
     if (raw_sample->pack_v > out->pack_v_max) out->pack_v_max = raw_sample->pack_v;
 
-    out->pack_i_avg += raw_sample->pack_i;
-    if (raw_sample->pack_i < out->pack_i_min) out->pack_i_min = raw_sample->pack_i;
-    if (raw_sample->pack_i > out->pack_i_max) out->pack_i_max = raw_sample->pack_i;
+    if (g_cfg.battery.current_enable) {
+        out->pack_i_avg += raw_sample->pack_i;
+        if (raw_sample->pack_i < out->pack_i_min) out->pack_i_min = raw_sample->pack_i;
+        if (raw_sample->pack_i > out->pack_i_max) out->pack_i_max = raw_sample->pack_i;
+    }
 
     out->sample_count++;
 }
@@ -289,9 +293,11 @@ static void calculate_average(bms_stats_t *accumulated_samples)
         return;
     }
     float inv_n = 1.0f / (float)accumulated_samples->sample_count;
-    for (int c = 0; c < BMS_NUM_CELLS; ++c) {
+    for (int c = 0; c < g_cfg.battery.num_cells; ++c) {
         accumulated_samples->cell_v_avg[c] *= inv_n;
     }
     accumulated_samples->pack_v_avg *= inv_n;
-    accumulated_samples->pack_i_avg *= inv_n;
+    if (g_cfg.battery.current_enable) {
+        accumulated_samples->pack_i_avg *= inv_n;
+    }
 }

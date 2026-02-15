@@ -24,9 +24,9 @@ typedef struct {
     TickType_t timestamp;                               ///< Timestamp containing earliest sample in this window
     size_t     sample_count;                            ///< Number of samples aggregated into this window
 
-    float cell_v_avg[BMS_NUM_CELLS];                    ///< Average  per-cell voltages
-    float cell_v_min[BMS_NUM_CELLS];                    ///< Minimum  per-cell voltages
-    float cell_v_max[BMS_NUM_CELLS];                    ///< Maximum  per-cell voltages   
+    float cell_v_avg[BMS_MAX_CELLS];                    ///< Average  per-cell voltages
+    float cell_v_min[BMS_MAX_CELLS];                    ///< Minimum  per-cell voltages
+    float cell_v_max[BMS_MAX_CELLS];                    ///< Maximum  per-cell voltages   
 
     float pack_v_avg;                                   ///< Average  pack voltage
     float pack_v_min;                                   ///< Minimum  pack voltage

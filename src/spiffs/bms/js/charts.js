@@ -2,6 +2,8 @@
 let vChart = null;
 /// Reference to chart instances for current
 let iChart = null;
+/// Runtime configuration (fetched once at startup)
+let bmsCfg = { num_cells: 5, current_enable: true };
 
 /// Helper function to create a dataset object for Chart.js.
 ///
@@ -24,7 +26,8 @@ function buildVoltage(history) {
   datasets.push(ds("pack_v_min", history.map(s => s.pack_v_min)));
   datasets.push(ds("pack_v_max", history.map(s => s.pack_v_max)));
 
-  for (let c = 0; c < 5; c++) {
+  const nc = bmsCfg.num_cells;
+  for (let c = 0; c < nc; c++) {
     datasets.push(ds(`cell${c+1}_v_avg`, history.map(s => s.cell_v_avg[c])));
     datasets.push(ds(`cell${c+1}_v_min`, history.map(s => s.cell_v_min[c])));
     datasets.push(ds(`cell${c+1}_v_max`, history.map(s => s.cell_v_max[c])));
@@ -59,7 +62,6 @@ async function refresh() {
   const history = await r.json();
 
   const v = buildVoltage(history);
-  const i = buildCurrent(history);
 
   if (!vChart) {
     vChart = new Chart(document.getElementById("vchart"), {
@@ -72,17 +74,38 @@ async function refresh() {
     vChart.update("none");
   }
 
-  if (!iChart) {
-    iChart = new Chart(document.getElementById("ichart"), {
-      type: "line",
-      data: i,
-      options: { animation: false, responsive: true }
-    });
+  // Current chart: only create/update if current measurement is enabled
+  const iContainer = document.getElementById("ichart-container");
+  if (bmsCfg.current_enable) {
+    if (iContainer) iContainer.style.display = '';
+    const i = buildCurrent(history);
+    if (!iChart) {
+      iChart = new Chart(document.getElementById("ichart"), {
+        type: "line",
+        data: i,
+        options: { animation: false, responsive: true }
+      });
+    } else {
+      iChart.data = i;
+      iChart.update("none");
+    }
   } else {
-    iChart.data = i;
-    iChart.update("none");
+    if (iContainer) iContainer.style.display = 'none';
   }
 }
 
-refresh();
-setInterval(refresh, 1000);
+/// This function loads runtime configuration and starts the chart refresh loop.
+async function init() {
+  try {
+    const r = await fetch("/bms/config/data");
+    const cfg = await r.json();
+    bmsCfg.num_cells = cfg.battery.num_cells || 5;
+    bmsCfg.current_enable = cfg.battery.current_enable !== false;
+  } catch (e) {
+    console.error("Failed to load config, using defaults", e);
+  }
+  refresh();
+  setInterval(refresh, 1000);
+}
+
+init();
