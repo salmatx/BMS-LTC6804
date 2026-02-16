@@ -22,6 +22,7 @@ Projects uses ESP-IDF framework. It is recommended to use sdkconfig settings as 
 **Component config --> FreeRTOS --> Kernel**
 
 - Set configTICK_RATE_HZ to 1000 Hz
+- Set configGENERATE_RUM_TIME_STATS
 
 **Serial flasher config --> Flash size**
 
