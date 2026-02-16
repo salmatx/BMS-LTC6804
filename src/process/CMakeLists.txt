@@ -7,4 +7,5 @@ idf_component_register(
     REQUIRES
         common
         bms
+        app_update
 )

@@ -87,7 +87,6 @@ esp_err_t bms_wifi_init(void)
     esp_netif_t *netif = esp_netif_create_default_wifi_sta();
 
     // Check if static IP is configured and valid
-    bool use_static_ip = false;
     if (g_cfg.wifi.static_ip[0] != '\0' && strlen(g_cfg.wifi.static_ip) > 0) {
         BMS_LOGI("Attempting to configure static IP: %s", g_cfg.wifi.static_ip);
         
@@ -123,7 +122,6 @@ esp_err_t bms_wifi_init(void)
                 err = esp_netif_set_ip_info(netif, &ip_info);
                 if (err == ESP_OK) {
                     BMS_LOGI("Static IP configured successfully");
-                    use_static_ip = true;
                 } else {
                     BMS_LOGW("Failed to set static IP: %s, restarting DHCP", esp_err_to_name(err));
                     esp_netif_dhcpc_start(netif);
@@ -229,20 +227,20 @@ esp_err_t bms_wifi_start_ap(void)
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap_config));
     ESP_ERROR_CHECK(esp_wifi_start());
 
-    BMS_LOGI("╔══════════════════════════════════════════════════════╗");
-    BMS_LOGI("║         WiFi AP MODE - Configuration Portal          ║");
-    BMS_LOGI("╠══════════════════════════════════════════════════════╣");
-    BMS_LOGI("║  SSID:     %s                               ║", AP_SSID);
-    BMS_LOGI("║  Password: %s                                  ║", AP_PASSWORD);
-    BMS_LOGI("║  IP:       192.168.4.1                               ║");
-    BMS_LOGI("║  HTTP:     http://192.168.4.1                        ║");
-    BMS_LOGI("╠══════════════════════════════════════════════════════╣");
-    BMS_LOGI("║  Steps:                                              ║");
-    BMS_LOGI("║  1. Connect to WiFi '%s'                    ║", AP_SSID);
-    BMS_LOGI("║  2. Open browser: http://192.168.4.1                 ║");
-    BMS_LOGI("║  3. Configure WiFi credentials                       ║");
-    BMS_LOGI("║  4. Device will restart with new settings            ║");
-    BMS_LOGI("╚══════════════════════════════════════════════════════╝");
+    BMS_LOGW("╔══════════════════════════════════════════════════════╗");
+    BMS_LOGW("  WiFi AP MODE - Configuration Portal");
+    BMS_LOGW("╠══════════════════════════════════════════════════════╣");
+    BMS_LOGW("  SSID:     %s", AP_SSID);
+    BMS_LOGW("  Password: %s", AP_PASSWORD);
+    BMS_LOGW("  IP:       192.168.4.1");
+    BMS_LOGW("  HTTP:     http://192.168.4.1");
+    BMS_LOGW("╠══════════════════════════════════════════════════════╣");
+    BMS_LOGW("  Steps:");
+    BMS_LOGW("  1. Connect to WiFi '%s'", AP_SSID);
+    BMS_LOGW("  2. Open browser: http://192.168.4.1");
+    BMS_LOGW("  3. Configure WiFi credentials");
+    BMS_LOGW("  4. Device will restart with new settings");
+    BMS_LOGW("╚══════════════════════════════════════════════════════╝");
 
     return ESP_OK;
 }
@@ -278,7 +276,13 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
         esp_wifi_connect();
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
-        BMS_LOGI("Got IP: " IPSTR, IP2STR(&event->ip_info.ip));
+        BMS_LOGW("╔══════════════════════════════════════════════════════╗");
+        BMS_LOGW("  WiFi STA MODE - Connected Successfully");
+        BMS_LOGW("╠══════════════════════════════════════════════════════╣");
+        BMS_LOGW("  IP Address: " IPSTR, IP2STR(&event->ip_info.ip));
+        BMS_LOGW("  Netmask:    " IPSTR, IP2STR(&event->ip_info.netmask));
+        BMS_LOGW("  Gateway:    " IPSTR, IP2STR(&event->ip_info.gw));
+        BMS_LOGW("╚══════════════════════════════════════════════════════╝");
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
     }
 }

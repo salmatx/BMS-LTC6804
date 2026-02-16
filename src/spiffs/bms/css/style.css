@@ -169,6 +169,20 @@ button {
   background: #45a049;
 }
 
+.btn-danger {
+  background: #f44336;
+  color: white;
+}
+
+.btn-danger:hover {
+  background: #d32f2f;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .btn-save {
   background: #4CAF50;
   color: white;

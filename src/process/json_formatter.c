@@ -7,6 +7,7 @@
 #include "logging.h"
 #include "json_formatter.h"
 #include "configuration.h"
+#include "telemetry.h"
 #include <stdio.h>
 
 /*==============================================================================================================*/
@@ -42,6 +43,8 @@
 /*==============================================================================================================*/
 /*                                            Private Variables                                                 */
 /*==============================================================================================================*/
+/// Message counter for telemetry inclusion (every 10th message)
+static uint32_t s_message_counter = 0;
 
 /*==============================================================================================================*/
 /*                                      Public Variables and Constants                                          */
@@ -62,16 +65,27 @@ int bms_stats_to_json(const bms_stats_t *st, char *buf, size_t buf_size)
         return -1;
     }
 
+    // Get basic device info
+    char device_id[18];
+    char sw_version[32];
+    telemetry_get_device_id(device_id, sizeof(device_id));
+    telemetry_get_sw_version(sw_version, sizeof(sw_version));
+    
+    // Check if we should include telemetry (every 10th message)
+    bool include_telemetry = (s_message_counter % 10) == 0;
+    s_message_counter++;
+
     const int nc = g_cfg.battery.num_cells;
     int off = 0;
 
-    // Opening brace + fixed scalar fields
+    // Opening brace + device ID + timestamp
     JSON_APPEND(off, buf, buf_size,
-        "{\"timestamp\":%u,\"sample_count\":%u,\"cell_errors\":%u,",
+        "{\"device_id\":\"%s\",\"timestamp\":%u,\"sample_count\":%u,\"cell_errors\":%u,",
+        device_id,
         (unsigned)st->timestamp,
         (unsigned)st->sample_count,
         (unsigned)st->cell_errors);
-
+    
     // cell_v_avg array
     JSON_APPEND(off, buf, buf_size, "\"cell_v_avg\":[");
     for (int i = 0; i < nc; ++i) {
@@ -103,6 +117,32 @@ int bms_stats_to_json(const bms_stats_t *st, char *buf, size_t buf_size)
         JSON_APPEND(off, buf, buf_size,
             ",\"pack_i_avg\":%.3f,\"pack_i_min\":%.3f,\"pack_i_max\":%.3f",
             st->pack_i_avg, st->pack_i_min, st->pack_i_max);
+    }
+
+    // Add telemetry data if this is the 10th message
+    if (include_telemetry) {
+        esp32_telemetry_t esp_telem;
+        ltc6804_status_t ltc_status;
+        
+        telemetry_get_esp32_telemetry(&esp_telem);
+        telemetry_get_ltc6804_status(&ltc_status);
+        
+        JSON_APPEND(off, buf, buf_size,
+            ",\"telemetry\":{\"sw_version\":\"%s\",\"cpu_load\":%u,"
+            "\"free_heap\":%u,\"min_heap\":%u",
+            sw_version,
+            (unsigned)esp_telem.cpu_load,
+            (unsigned)esp_telem.free_heap,
+            (unsigned)esp_telem.min_free_heap);
+        
+        if (ltc_status.valid) {
+            JSON_APPEND(off, buf, buf_size,
+                ",\"ltc_status_a\":%u,\"ltc_status_b\":%u",
+                (unsigned)ltc_status.status_a,
+                (unsigned)ltc_status.status_b);
+        }
+        
+        JSON_APPEND(off, buf, buf_size, "}");
     }
 
     // Closing brace

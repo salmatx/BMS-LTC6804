@@ -16,6 +16,7 @@
 #include "wifi.h"
 #include "mqtt.h"
 #include "http_server.h"
+#include "telemetry.h"
 
 
 /*==============================================================================================================*/
@@ -58,6 +59,9 @@
 bool initialization_exec(void)
 {
     esp_err_t err;
+
+    // Initialize telemetry module (caches device ID and SW version)
+    telemetry_init();
 
     // Initialize WiFi in station mode to connect to MQTT broker on remote server.
     // If connection fails, falls back to AP mode for configuration.

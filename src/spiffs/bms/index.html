@@ -35,6 +35,9 @@
       <button class="btn-success" onclick="location.href='/bms/config'">
         ⚙️ Configure System
       </button>
+      <button id="led-btn" class="btn-danger" onclick="toggleLED()" style="min-width: 150px;">
+        💡 LED: OFF
+      </button>
     </div>
   </div>
   
@@ -106,6 +109,54 @@
     }
 
     loadCfg();
+    
+    // LED Control
+    let ledState = false;
+
+    function updateLEDDisplay() {
+      const btnEl = document.getElementById('led-btn');
+      if (ledState) {
+        // LED is ON - button should be GREEN
+        btnEl.textContent = '💡 LED: ON';
+        btnEl.className = 'btn-success';
+      } else {
+        // LED is OFF - button should be RED
+        btnEl.textContent = '💡 LED: OFF';
+        btnEl.className = 'btn-danger';
+      }
+    }
+
+    async function toggleLED() {
+      const endpoint = ledState ? '/bms/led/off' : '/bms/led/on';
+      const btnEl = document.getElementById('led-btn');
+      btnEl.disabled = true;
+      
+      try {
+        const response = await fetch(endpoint, { method: 'POST' });
+        const data = await response.json();
+        ledState = (data.status === 'on');
+        updateLEDDisplay();
+      } catch (error) {
+        console.error('Error toggling LED:', error);
+        alert('Failed to toggle LED');
+      } finally {
+        btnEl.disabled = false;
+      }
+    }
+
+    async function getLEDStatus() {
+      try {
+        const response = await fetch('/bms/led/status');
+        const data = await response.json();
+        ledState = (data.status === 'on');
+        updateLEDDisplay();
+      } catch (error) {
+        console.error('Error getting LED status:', error);
+      }
+    }
+
+    // Get LED status on page load
+    getLEDStatus();
   </script>
 </body>
 </html>

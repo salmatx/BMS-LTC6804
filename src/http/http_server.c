@@ -21,6 +21,7 @@
 #include "bms_data.h"
 #include "cJSON.h"
 #include "wifi.h"
+#include "led_control.h"
 
 /*==============================================================================================================*/
 /*                                             Private Macros                                                   */
@@ -51,6 +52,9 @@ static esp_err_t h_config_page(httpd_req_t *req);
 static esp_err_t h_js_charts(httpd_req_t *req);
 static esp_err_t h_css_style(httpd_req_t *req);
 static esp_err_t h_stats_data(httpd_req_t *req);
+static esp_err_t h_led_on(httpd_req_t *req);
+static esp_err_t h_led_off(httpd_req_t *req);
+static esp_err_t h_led_status(httpd_req_t *req);
 
 /*==============================================================================================================*/
 /*                                            Private Constants                                                 */
@@ -77,12 +81,15 @@ esp_err_t http_server_start(void)
 {
     if (s_httpd) return ESP_OK;
 
+    // Initialize LED control
+    led_control_init();
+
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.lru_purge_enable = true;
     cfg.core_id = 0;
     cfg.stack_size = 8192;
     cfg.task_priority = 4;
-    cfg.max_uri_handlers = 12;
+    cfg.max_uri_handlers = 16;
 
     if (httpd_start(&s_httpd, &cfg) != ESP_OK) {
         s_httpd = NULL;
@@ -99,6 +106,9 @@ esp_err_t http_server_start(void)
     httpd_uri_t u_cfg_save      = { .uri = "/bms/config/save",      .method = HTTP_POST, .handler = h_config_save };
     httpd_uri_t u_cfg_cancel    = { .uri = "/bms/config/cancel",    .method = HTTP_POST, .handler = h_config_cancel };
     httpd_uri_t u_css           = { .uri = "/bms/css/style.css",    .method = HTTP_GET,  .handler = h_css_style };
+    httpd_uri_t u_led_on        = { .uri = "/bms/led/on",           .method = HTTP_POST, .handler = h_led_on };
+    httpd_uri_t u_led_off       = { .uri = "/bms/led/off",          .method = HTTP_POST, .handler = h_led_off };
+    httpd_uri_t u_led_status    = { .uri = "/bms/led/status",       .method = HTTP_GET,  .handler = h_led_status };
     
     httpd_register_uri_handler(s_httpd, &u_root);
     httpd_register_uri_handler(s_httpd, &u_bms);
@@ -110,6 +120,9 @@ esp_err_t http_server_start(void)
     httpd_register_uri_handler(s_httpd, &u_cfg_save);
     httpd_register_uri_handler(s_httpd, &u_cfg_cancel);
     httpd_register_uri_handler(s_httpd, &u_css);
+    httpd_register_uri_handler(s_httpd, &u_led_on);
+    httpd_register_uri_handler(s_httpd, &u_led_off);
+    httpd_register_uri_handler(s_httpd, &u_led_status);
 
     BMS_LOGI("HTTP server started");
     return ESP_OK;
@@ -588,4 +601,40 @@ static bool is_valid_ip(const char *ip_str)
     struct in_addr addr;
     // inet_pton returns 1 on success, 0 if invalid format, -1 on error
     return inet_pton(AF_INET, ip_str, &addr) == 1;
+}
+
+/// POST handler for turning LED on. Calls LED control module.
+///
+/// \param req Pointer to HTTP request structure
+/// \return ESP_OK on success
+static esp_err_t h_led_on(httpd_req_t *req)
+{
+    led_control_turn_on();
+    
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_sendstr(req, "{\"status\":\"on\"}");
+}
+
+/// POST handler for turning LED off. Calls LED control module.
+///
+/// \param req Pointer to HTTP request structure
+/// \return ESP_OK on success
+static esp_err_t h_led_off(httpd_req_t *req)
+{
+    led_control_turn_off();
+    
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_sendstr(req, "{\"status\":\"off\"}");
+}
+
+/// GET handler for retrieving current LED status.
+///
+/// \param req Pointer to HTTP request structure
+/// \return ESP_OK on success
+static esp_err_t h_led_status(httpd_req_t *req)
+{
+    httpd_resp_set_type(req, "application/json");
+    bool led_on = led_control_get_state();
+    const char *status = led_on ? "{\"status\":\"on\"}" : "{\"status\":\"off\"}";
+    return httpd_resp_sendstr(req, status);
 }

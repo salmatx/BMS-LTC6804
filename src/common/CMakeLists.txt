@@ -2,6 +2,11 @@ idf_component_register(
     SRCS
         "logging.c"
         "watchdog.c"
+        "led_control.c"
+        "telemetry.c"
     INCLUDE_DIRS
         "."
+    REQUIRES
+        driver
+        app_update
 )
