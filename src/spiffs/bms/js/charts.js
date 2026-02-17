@@ -1,100 +1,219 @@
-/// Reference to chart instances for voltage
-let vChart = null;
-/// Reference to chart instances for current
+/// Reference to pack voltage chart instance
+let packChart = null;
+/// Object mapping cell index to its Chart instance
+const cellCharts = {};
+/// Reference to current chart instance
 let iChart = null;
 /// Runtime configuration (fetched once at startup)
 let bmsCfg = { num_cells: 5, current_enable: true };
 
-/// Helper function to create a dataset object for Chart.js.
-///
-/// \param label Dataset label
-/// \param data Array of data points
-/// \return Dataset object
-function ds(label, data) {
-  return { label, data, borderWidth: 1, pointRadius: 0 };
+/// Helper – create a Chart.js dataset descriptor.
+function ds(label, data, color) {
+  const o = { label, data, borderWidth: 1.5, pointRadius: 0 };
+  if (color) { o.borderColor = color; o.backgroundColor = color; }
+  return o;
 }
 
-/// This function builds the voltage chart data from the history.
-///
-/// \param history Array of statistics history objects
-/// \return Chart.js data object
-function buildVoltage(history) {
-  const labels = history.map(s => s.timestamp);
+/// Predefined colours for avg / min / max lines.
+const AVG_COLOR = "rgba(54,162,235,1)";
+const MIN_COLOR = "rgba(255,159,64,1)";
+const MAX_COLOR = "rgba(75,192,192,1)";
 
-  const datasets = [];
-  datasets.push(ds("pack_v_avg", history.map(s => s.pack_v_avg)));
-  datasets.push(ds("pack_v_min", history.map(s => s.pack_v_min)));
-  datasets.push(ds("pack_v_max", history.map(s => s.pack_v_max)));
+// ── Pack-level voltage ──────────────────────────────────────────────
 
-  const nc = bmsCfg.num_cells;
-  for (let c = 0; c < nc; c++) {
-    datasets.push(ds(`cell${c+1}_v_avg`, history.map(s => s.cell_v_avg[c])));
-    datasets.push(ds(`cell${c+1}_v_min`, history.map(s => s.cell_v_min[c])));
-    datasets.push(ds(`cell${c+1}_v_max`, history.map(s => s.cell_v_max[c])));
-  }
-
-  return { labels, datasets };
-}
-
-/// This function builds the current chart data from the history.
-///
-/// \param history Array of statistics history objects
-/// \return Chart.js data object
-function buildCurrent(history) {
-  const labels = history.map(s => s.timestamp);
+/// Build data object for the pack voltage chart.
+function buildPackVoltage(history) {
   return {
-    labels,
+    labels: history.map(s => s.timestamp),
     datasets: [
-      ds("pack_i_avg", history.map(s => s.pack_i_avg)),
-      ds("pack_i_min", history.map(s => s.pack_i_min)),
-      ds("pack_i_max", history.map(s => s.pack_i_max)),
+      ds("avg", history.map(s => s.pack_v_avg), AVG_COLOR),
+      ds("min", history.map(s => s.pack_v_min), MIN_COLOR),
+      ds("max", history.map(s => s.pack_v_max), MAX_COLOR),
     ]
   };
 }
 
-/// This function refreshes the charts by fetching new data and updating the Chart.js instances.
-/// It is called periodically to keep the charts up to date.
-///
-/// \param None
-/// \return None
-async function refresh() {
-  const r = await fetch("/bms/stats/data");
-  const history = await r.json();
+// ── Per-cell voltage ────────────────────────────────────────────────
 
-  const v = buildVoltage(history);
+/// Build data object for one cell chart.
+function buildCellVoltage(history, idx) {
+  return {
+    labels: history.map(s => s.timestamp),
+    datasets: [
+      ds("avg", history.map(s => s.cell_v_avg[idx]), AVG_COLOR),
+      ds("min", history.map(s => s.cell_v_min[idx]), MIN_COLOR),
+      ds("max", history.map(s => s.cell_v_max[idx]), MAX_COLOR),
+    ]
+  };
+}
 
-  if (!vChart) {
-    vChart = new Chart(document.getElementById("vchart"), {
-      type: "line",
-      data: v,
-      options: { animation: false, responsive: true }
-    });
-  } else {
-    vChart.data = v;
-    vChart.update("none");
-  }
+// ── Current ─────────────────────────────────────────────────────────
 
-  // Current chart: only create/update if current measurement is enabled
-  const iContainer = document.getElementById("ichart-container");
-  if (bmsCfg.current_enable) {
-    if (iContainer) iContainer.style.display = '';
-    const i = buildCurrent(history);
-    if (!iChart) {
-      iChart = new Chart(document.getElementById("ichart"), {
-        type: "line",
-        data: i,
-        options: { animation: false, responsive: true }
-      });
-    } else {
-      iChart.data = i;
-      iChart.update("none");
-    }
-  } else {
-    if (iContainer) iContainer.style.display = 'none';
+/// Build data object for the current chart.
+function buildCurrent(history) {
+  return {
+    labels: history.map(s => s.timestamp),
+    datasets: [
+      ds("avg", history.map(s => s.pack_i_avg), AVG_COLOR),
+      ds("min", history.map(s => s.pack_i_min), MIN_COLOR),
+      ds("max", history.map(s => s.pack_i_max), MAX_COLOR),
+    ]
+  };
+}
+
+// ── Checkbox helpers ────────────────────────────────────────────────
+
+/// Toggle visibility of every cell chart.
+function toggleAllCells(checked) {
+  const nc = bmsCfg.num_cells;
+  for (let i = 0; i < nc; i++) {
+    const cb = document.getElementById("cbCell" + i);
+    if (cb) cb.checked = checked;
+    const wrap = document.getElementById("cellWrap" + i);
+    if (wrap) wrap.style.display = checked ? "" : "none";
   }
 }
 
-/// This function loads runtime configuration and starts the chart refresh loop.
+/// Toggle visibility of a single cell chart.
+function toggleCell(idx, checked) {
+  const wrap = document.getElementById("cellWrap" + idx);
+  if (wrap) wrap.style.display = checked ? "" : "none";
+  // Sync "Select all" checkbox
+  const all = document.getElementById("cbSelectAll");
+  if (!all) return;
+  const nc = bmsCfg.num_cells;
+  let allChecked = true;
+  for (let i = 0; i < nc; i++) {
+    const cb = document.getElementById("cbCell" + i);
+    if (cb && !cb.checked) { allChecked = false; break; }
+  }
+  all.checked = allChecked;
+}
+
+// ── DOM scaffolding ─────────────────────────────────────────────────
+
+/// Create per-cell checkboxes and chart containers.
+function buildCellUI() {
+  const nc = bmsCfg.num_cells;
+  const cbList = document.getElementById("cellCbList");
+  const container = document.getElementById("cellChartsContainer");
+  if (!cbList || !container) return;
+
+  cbList.innerHTML = "";
+  container.innerHTML = "";
+
+  for (let i = 0; i < nc; i++) {
+    // Checkbox
+    const lbl = document.createElement("label");
+    lbl.style.cssText = "cursor:pointer;white-space:nowrap;";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.id = "cbCell" + i;
+    cb.checked = true;
+    cb.style.cssText = "width:auto;margin-right:4px;";
+    cb.onchange = function () { toggleCell(i, this.checked); };
+    lbl.appendChild(cb);
+    lbl.appendChild(document.createTextNode("Cell " + (i + 1)));
+    cbList.appendChild(lbl);
+
+    // Chart wrapper
+    const wrap = document.createElement("div");
+    wrap.id = "cellWrap" + i;
+    wrap.className = "chart-container";
+    wrap.style.marginBottom = "0";
+
+    const title = document.createElement("h3");
+    title.className = "chart-title";
+    title.textContent = "\uD83D\uDD0B Cell " + (i + 1);
+    wrap.appendChild(title);
+
+    const canvas = document.createElement("canvas");
+    canvas.id = "cellChart" + i;
+    wrap.appendChild(canvas);
+
+    container.appendChild(wrap);
+  }
+}
+
+// ── Common chart options ────────────────────────────────────────────
+
+const CHART_OPTS = {
+  animation: false,
+  responsive: true,
+  plugins: {
+    legend: { labels: { boxWidth: 12, padding: 8 } }
+  },
+  scales: {
+    x: { display: false }
+  }
+};
+
+// ── Refresh loop ────────────────────────────────────────────────────
+
+/// Fetch latest history and update all charts.
+async function refresh() {
+  let history;
+  try {
+    const r = await fetch("/bms/stats/data");
+    history = await r.json();
+  } catch (e) {
+    console.error("Stats fetch failed", e);
+    return;
+  }
+
+  // Data-points indicator
+  const dpEl = document.getElementById("dataPoints");
+  if (dpEl) dpEl.textContent = history.length;
+
+  // ── Pack voltage chart ──
+  const pv = buildPackVoltage(history);
+  if (!packChart) {
+    const ctx = document.getElementById("pack-vchart");
+    if (ctx) {
+      packChart = new Chart(ctx, { type: "line", data: pv, options: CHART_OPTS });
+    }
+  } else {
+    packChart.data = pv;
+    packChart.update("none");
+  }
+
+  // ── Per-cell charts ──
+  const nc = bmsCfg.num_cells;
+  for (let i = 0; i < nc; i++) {
+    const cv = buildCellVoltage(history, i);
+    if (!cellCharts[i]) {
+      const ctx = document.getElementById("cellChart" + i);
+      if (ctx) {
+        cellCharts[i] = new Chart(ctx, { type: "line", data: cv, options: CHART_OPTS });
+      }
+    } else {
+      cellCharts[i].data = cv;
+      cellCharts[i].update("none");
+    }
+  }
+
+  // ── Current chart ──
+  const iContainer = document.getElementById("ichart-container");
+  if (bmsCfg.current_enable) {
+    if (iContainer) iContainer.style.display = "";
+    const ci = buildCurrent(history);
+    if (!iChart) {
+      const ctx = document.getElementById("ichart");
+      if (ctx) {
+        iChart = new Chart(ctx, { type: "line", data: ci, options: CHART_OPTS });
+      }
+    } else {
+      iChart.data = ci;
+      iChart.update("none");
+    }
+  } else {
+    if (iContainer) iContainer.style.display = "none";
+  }
+}
+
+// ── Initialisation ──────────────────────────────────────────────────
+
+/// Load runtime config, build UI, start refresh loop.
 async function init() {
   try {
     const r = await fetch("/bms/config/data");
@@ -104,8 +223,10 @@ async function init() {
   } catch (e) {
     console.error("Failed to load config, using defaults", e);
   }
+
+  buildCellUI();
   refresh();
-  setInterval(refresh, 1000);
+  setInterval(refresh, 5000);
 }
 
 init();

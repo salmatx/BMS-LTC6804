@@ -5,7 +5,9 @@
 /*                                                Includes                                                      */
 /*==============================================================================================================*/
 #include "stats_history.h"
+#include "logging.h"
 
+#include <stdlib.h>
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/portmacro.h"
@@ -14,15 +16,17 @@
 /*==============================================================================================================*/
 /*                                             Private Macros                                                   */
 /*==============================================================================================================*/
+/// Log module tag used by logging module
+#define LOG_MODULE_TAG "BMS_HIST"
+
 /// Definition of time span for statistics history to be saved and displayed via HTTP (in seconds).
-#define BMS_HTTP_SECONDS           60u
+#define BMS_HTTP_SECONDS           30u
 /// Maximum count of statistics windows stored per second.
 #define BMS_MAX_WINDOWS_PER_SEC    4u
 /// Total capacity of statistics history buffer.
 #define BMS_HTTP_HISTORY_CAPACITY  (BMS_HTTP_SECONDS * BMS_MAX_WINDOWS_PER_SEC)
 
-/// Maximum length of JSON string for one statistics window.
-#define BMS_STATS_JSON_MAXLEN      512u
+
 
 /*==============================================================================================================*/
 /*                                              Private Types                                                   */
@@ -35,11 +39,11 @@ typedef struct {
 
 /// Structure representing the circular buffer for statistics history
 typedef struct {
-    hist_item_t items[BMS_HTTP_HISTORY_CAPACITY];  ///< Circular buffer array
-    uint16_t    head;                              ///< Next write position
-    uint16_t    count;                             ///< Valid entries count
-    uint16_t    capacity;                          ///< Buffer capacity
-    portMUX_TYPE lock;                             ///< Synchronization lock for thread safety
+    hist_item_t  *items;                           ///< Heap-allocated circular buffer array
+    uint16_t      head;                            ///< Next write position
+    uint16_t      count;                           ///< Valid entries count
+    uint16_t      capacity;                        ///< Buffer capacity
+    portMUX_TYPE  lock;                            ///< Synchronization lock for thread safety
 } stats_history_buffer_t;
 
 /*==============================================================================================================*/
@@ -53,11 +57,12 @@ typedef struct {
 /*==============================================================================================================*/
 /*                                            Private Variables                                                 */
 /*==============================================================================================================*/
-/// Circular buffer storing historical statistics windows
+/// Circular buffer storing historical statistics windows (items allocated on heap via init)
 static stats_history_buffer_t s_history_buffer = {
+    .items = NULL,
     .head = 0,
     .count = 0,
-    .capacity = BMS_HTTP_HISTORY_CAPACITY,
+    .capacity = 0,
     .lock = portMUX_INITIALIZER_UNLOCKED
 };
 
@@ -68,6 +73,31 @@ static stats_history_buffer_t s_history_buffer = {
 /*==============================================================================================================*/
 /*                                       Public Function Definitions                                            */
 /*==============================================================================================================*/
+/// This function initializes the statistics history buffer by allocating the items array on the heap.
+/// Must be called once before any push or send operations.
+///
+/// \param None
+/// \return ESP_OK on success, ESP_ERR_NO_MEM if allocation fails
+esp_err_t bms_stats_hist_init(void)
+{
+    s_history_buffer.items = calloc(BMS_HTTP_HISTORY_CAPACITY, sizeof(hist_item_t));
+    if (!s_history_buffer.items) {
+        BMS_LOGE("Failed to allocate history buffer (%u bytes)",
+                 (unsigned)(BMS_HTTP_HISTORY_CAPACITY * sizeof(hist_item_t)));
+        return ESP_ERR_NO_MEM;
+    }
+
+    s_history_buffer.head     = 0;
+    s_history_buffer.count    = 0;
+    s_history_buffer.capacity = BMS_HTTP_HISTORY_CAPACITY;
+
+    BMS_LOGI("History buffer allocated: %u items, %u bytes",
+             (unsigned)BMS_HTTP_HISTORY_CAPACITY,
+             (unsigned)(BMS_HTTP_HISTORY_CAPACITY * sizeof(hist_item_t)));
+
+    return ESP_OK;
+}
+
 /// This function pushes a new JSON-formatted statistics window into the history buffer.
 /// Note that if the buffer is full, the oldest entry is overwritten.
 ///
@@ -76,7 +106,7 @@ static stats_history_buffer_t s_history_buffer = {
 /// \return None
 void bms_stats_hist_push(const char *json, size_t len)
 {
-    if (!json || len == 0) return;
+    if (!json || len == 0 || !s_history_buffer.items) return;
 
     taskENTER_CRITICAL(&s_history_buffer.lock);
 
@@ -99,6 +129,11 @@ void bms_stats_hist_push(const char *json, size_t len)
 esp_err_t bms_stats_hist_send_as_json_array(httpd_req_t *req)
 {
     httpd_resp_set_type(req, "application/json");
+
+    if (!s_history_buffer.items) {
+        httpd_resp_send_chunk(req, "[]", 2);
+        return httpd_resp_send_chunk(req, NULL, 0);
+    }
 
     if (httpd_resp_send_chunk(req, "[", 1) != ESP_OK) return ESP_FAIL;
 

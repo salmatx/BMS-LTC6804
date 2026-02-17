@@ -235,7 +235,7 @@ static app_state_t state_processing_handler(void)
     // 2) Compute stats and publish them using QoS 0 (fire-and-forget)
     bms_stats_buffer_t stats_buf;
     // Buffer for JSON serialization
-    char json_buf[512];
+    char json_buf[BMS_STATS_JSON_MAXLEN];
 
     // 2.1) Process all available samples in ring buffer 
     while (buf.count > 0) {

@@ -17,6 +17,7 @@
 #include "mqtt.h"
 #include "http_server.h"
 #include "telemetry.h"
+#include "stats_history.h"
 
 
 /*==============================================================================================================*/
@@ -62,6 +63,13 @@ bool initialization_exec(void)
 
     // Initialize telemetry module (caches device ID and SW version)
     telemetry_init();
+
+    // Allocate statistics history buffer on heap
+    err = bms_stats_hist_init();
+    if (err != ESP_OK) {
+        BMS_LOGE("Stats history init failed: %s", esp_err_to_name(err));
+        return false;
+    }
 
     // Initialize WiFi in station mode to connect to MQTT broker on remote server.
     // If connection fails, falls back to AP mode for configuration.

@@ -6,14 +6,13 @@
   <title>BMS Statistics</title>
   <link rel="stylesheet" href="/bms/css/style.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script src="/bms/js/charts.js"></script>
 </head>
 <body>
   <div class="container">
     <h1>BMS Statistics</h1>
     
     <div class="info-box">
-      Real-time monitoring of battery pack voltages and current. Charts update every second with the last 60 seconds of data.
+      Real-time monitoring of battery pack voltages and current. Charts update every 5 seconds with the last 30 seconds of data.
     </div>
     
     <div class="stats-info">
@@ -23,18 +22,27 @@
       </div>
       <div class="stat-box">
         <div class="stat-label">Update Rate</div>
-        <div class="stat-value">1 Hz</div>
+        <div class="stat-value">0.2 Hz</div>
       </div>
       <div class="stat-box">
         <div class="stat-label">Time Window</div>
-        <div class="stat-value">60s</div>
+        <div class="stat-value">30s</div>
       </div>
     </div>
 
     <div class="chart-container">
-      <h3 class="chart-title">📊 Voltage Measurements</h3>
-      <canvas id="vchart"></canvas>
+      <h3 class="chart-title">📊 Pack Voltage</h3>
+      <canvas id="pack-vchart"></canvas>
     </div>
+
+    <h3 class="chart-title" style="margin-top:24px;">📊 Cell Voltages</h3>
+    <div id="cellCheckboxes" style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-bottom:12px;justify-content:flex-end;">
+      <label style="font-weight:bold;cursor:pointer;margin-right:auto;">
+        <input type="checkbox" id="cbSelectAll" checked onchange="toggleAllCells(this.checked)" style="width:auto;margin-right:4px;">Select/Deselect all
+      </label>
+      <span id="cellCbList" style="display:flex;flex-wrap:wrap;gap:12px;"></span>
+    </div>
+    <div id="cellChartsContainer" style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;"></div>
 
     <div class="chart-container" id="ichart-container">
       <h3 class="chart-title">⚡ Current Measurements</h3>
@@ -43,5 +51,7 @@
 
     <a href="/bms" class="back-link">← Back to Dashboard</a>
   </div>
+
+  <script src="/bms/js/charts.js"></script>
 </body>
 </html>
