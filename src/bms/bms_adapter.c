@@ -187,7 +187,7 @@ static esp_err_t demo_read_sample(bms_sample_t *out)
     // Generate random pack current within configured min/max limits (only if current measurement enabled)
     if (g_cfg.battery.current_enable) {
         float ir = demo_rand01();
-        out->pack_i = g_cfg.battery.current_min + ir * g_cfg.battery.current_max * 2.0f;
+        out->pack_i = g_cfg.battery.current_min + ir * (g_cfg.battery.current_max - g_cfg.battery.current_min);
     } else {
         out->pack_i = 0.0f;
     }
