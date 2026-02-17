@@ -19,6 +19,9 @@
 /// Log module tag used by logging module
 #define LOG_MODULE_TAG "CFG"
 
+/// Maximum allowed configuration file size in bytes (16 KB)
+#define MAX_CONFIG_FILE_SIZE  16384
+
 /*==============================================================================================================*/
 /*                                              Private Types                                                   */
 /*==============================================================================================================*/
@@ -38,6 +41,9 @@ static void json_get_bool(cJSON *obj, const char *key, bool *out);
 /*==============================================================================================================*/
 /*                                            Private Variables                                                 */
 /*==============================================================================================================*/
+/// Cached JSON string of battery_templates array from config file.
+/// Preserved across load/save so that configuration_save does not lose template data.
+static char *s_battery_templates_json = NULL;
 
 /*==============================================================================================================*/
 /*                                      Public Variables and Constants                                          */
@@ -81,13 +87,33 @@ esp_err_t configuration_load(const char *path)
         return ESP_ERR_NOT_FOUND;
     }
 
-    char buf[1024];
-    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+    // Determine file size for dynamic allocation
+    fseek(f, 0, SEEK_END);
+    long fsize = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (fsize <= 0 || fsize > MAX_CONFIG_FILE_SIZE) {
+        fclose(f);
+        ESP_LOGE(LOG_MODULE_TAG, "Config file size invalid (%ld)", fsize);
+        return ESP_FAIL;
+    }
+
+    char *buf = malloc((size_t)fsize + 1);
+    if (!buf) {
+        fclose(f);
+        ESP_LOGE(LOG_MODULE_TAG, "Failed to allocate config buffer");
+        return ESP_FAIL;
+    }
+
+    size_t n = fread(buf, 1, (size_t)fsize, f);
     fclose(f);
-    if (n == 0) return ESP_FAIL;
+    if (n == 0) {
+        free(buf);
+        return ESP_FAIL;
+    }
     buf[n] = '\0';
 
     cJSON *root = cJSON_Parse(buf);
+    free(buf);
     if (!root) return ESP_FAIL;
 
     cJSON *jwifi = cJSON_GetObjectItem(root, "wifi");
@@ -118,6 +144,17 @@ esp_err_t configuration_load(const char *path)
         json_get_float(jbatt, "pack_v_max",  &g_cfg.battery.pack_v_max);
         json_get_float(jbatt, "current_min", &g_cfg.battery.current_min);
         json_get_float(jbatt, "current_max", &g_cfg.battery.current_max);
+    }
+
+    // Cache battery_templates JSON for later use (web UI and re-saving)
+    cJSON *jtemplates = cJSON_GetObjectItem(root, "battery_templates");
+    if (cJSON_IsArray(jtemplates)) {
+        free(s_battery_templates_json);
+        s_battery_templates_json = cJSON_PrintUnformatted(jtemplates);
+        if (s_battery_templates_json) {
+            ESP_LOGI(LOG_MODULE_TAG, "Battery templates loaded (%u bytes)",
+                     (unsigned)strlen(s_battery_templates_json));
+        }
     }
 
     cJSON_Delete(root);
@@ -160,8 +197,16 @@ esp_err_t configuration_save(const char *path)
     cJSON_AddNumberToObject(jbatt, "current_max", g_cfg.battery.current_max);
     cJSON_AddItemToObject(root, "battery", jbatt);
 
-    // Convert to formatted JSON string
-    char *json_str = cJSON_Print(root);
+    // Re-attach battery_templates if previously loaded
+    if (s_battery_templates_json) {
+        cJSON *jtemplates = cJSON_Parse(s_battery_templates_json);
+        if (jtemplates) {
+            cJSON_AddItemToObject(root, "battery_templates", jtemplates);
+        }
+    }
+
+    // Convert to compact JSON string (unformatted to reduce heap usage on ESP32)
+    char *json_str = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
 
     if (!json_str) {
@@ -189,6 +234,233 @@ esp_err_t configuration_save(const char *path)
 
     ESP_LOGI(LOG_MODULE_TAG, "Config saved to %s", path);
     return ESP_OK;
+}
+
+/// This function returns the cached battery templates JSON string loaded from config file.
+/// The returned string is a JSON array. Returns NULL if no templates were loaded.
+///
+/// \param None
+/// \return Pointer to battery templates JSON string, or NULL
+const char *configuration_get_battery_templates_json(void)
+{
+    return s_battery_templates_json;
+}
+
+/// This function adds a new custom battery template to the cached templates and saves to config file.
+/// If a group with the given category label already exists, the battery is appended to that group.
+/// Otherwise, a new group is created.
+///
+/// \param id        Unique identifier for the battery (e.g. "custom_1")
+/// \param name      Display name for the battery
+/// \param category  Group label (e.g. "Li-ion NMC/NCA")
+/// \param cell_v_min  Minimum cell voltage
+/// \param cell_v_max  Maximum cell voltage
+/// \param current_min Minimum current (discharge, negative)
+/// \param current_max Maximum current (charge, positive)
+/// \return ESP_OK on success, otherwise an error code
+esp_err_t configuration_add_battery_template(const char *id, const char *name, const char *category,
+                                              float cell_v_min, float cell_v_max,
+                                              float current_min, float current_max)
+{
+    // Parse existing templates or create empty array
+    cJSON *templates = NULL;
+    if (s_battery_templates_json) {
+        templates = cJSON_Parse(s_battery_templates_json);
+    }
+    if (!templates) {
+        templates = cJSON_CreateArray();
+    }
+
+    // Find existing group by label
+    cJSON *target_group = NULL;
+    cJSON *group = NULL;
+    cJSON_ArrayForEach(group, templates) {
+        cJSON *jlabel = cJSON_GetObjectItem(group, "label");
+        if (cJSON_IsString(jlabel) && strcmp(jlabel->valuestring, category) == 0) {
+            target_group = group;
+            break;
+        }
+    }
+
+    // Create group if not found
+    if (!target_group) {
+        target_group = cJSON_CreateObject();
+        cJSON_AddStringToObject(target_group, "label", category);
+        cJSON_AddItemToObject(target_group, "batteries", cJSON_CreateArray());
+        cJSON_AddItemToArray(templates, target_group);
+    }
+
+    // Build new battery entry
+    cJSON *battery = cJSON_CreateObject();
+    cJSON_AddStringToObject(battery, "id", id);
+    cJSON_AddStringToObject(battery, "name", name);
+    cJSON_AddNumberToObject(battery, "cell_v_min", cell_v_min);
+    cJSON_AddNumberToObject(battery, "cell_v_max", cell_v_max);
+    cJSON_AddNumberToObject(battery, "current_min", current_min);
+    cJSON_AddNumberToObject(battery, "current_max", current_max);
+
+    cJSON *batteries_arr = cJSON_GetObjectItem(target_group, "batteries");
+    if (!cJSON_IsArray(batteries_arr)) {
+        batteries_arr = cJSON_CreateArray();
+        cJSON_AddItemToObject(target_group, "batteries", batteries_arr);
+    }
+    cJSON_AddItemToArray(batteries_arr, battery);
+
+    // Re-serialize and update cache
+    char *new_json = cJSON_PrintUnformatted(templates);
+    cJSON_Delete(templates);
+
+    if (!new_json) {
+        ESP_LOGE(LOG_MODULE_TAG, "Failed to serialize updated templates");
+        return ESP_FAIL;
+    }
+
+    free(s_battery_templates_json);
+    s_battery_templates_json = new_json;
+
+    ESP_LOGI(LOG_MODULE_TAG, "Battery template '%s' added to group '%s'", name, category);
+
+    // Persist to config file
+    return configuration_save("/spiffs/config.json");
+}
+
+/// This function edits an existing battery template identified by its id.
+/// It first removes the old entry, then adds the updated one.
+///
+/// \param id        Unique identifier of the battery to edit
+/// \param name      Updated display name
+/// \param category  Group label (may differ from original to move between groups)
+/// \param cell_v_min  Minimum cell voltage
+/// \param cell_v_max  Maximum cell voltage
+/// \param current_min Minimum current
+/// \param current_max Maximum current
+/// \return ESP_OK on success, otherwise an error code
+esp_err_t configuration_edit_battery_template(const char *id, const char *name, const char *category,
+                                              float cell_v_min, float cell_v_max,
+                                              float current_min, float current_max)
+{
+    cJSON *templates = NULL;
+    if (s_battery_templates_json) {
+        templates = cJSON_Parse(s_battery_templates_json);
+    }
+    if (!templates) {
+        ESP_LOGE(LOG_MODULE_TAG, "No templates to edit");
+        return ESP_FAIL;
+    }
+
+    // Find and remove old entry by id across all groups
+    bool found = false;
+    cJSON *group = NULL;
+    cJSON_ArrayForEach(group, templates) {
+        cJSON *batteries = cJSON_GetObjectItem(group, "batteries");
+        if (!cJSON_IsArray(batteries)) continue;
+        int size = cJSON_GetArraySize(batteries);
+        for (int i = 0; i < size; i++) {
+            cJSON *b = cJSON_GetArrayItem(batteries, i);
+            cJSON *bid = cJSON_GetObjectItem(b, "id");
+            if (cJSON_IsString(bid) && strcmp(bid->valuestring, id) == 0) {
+                cJSON_DeleteItemFromArray(batteries, i);
+                found = true;
+                break;
+            }
+        }
+        if (found) break;
+    }
+
+    if (!found) {
+        cJSON_Delete(templates);
+        ESP_LOGW(LOG_MODULE_TAG, "Template '%s' not found for editing", id);
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    // Remove empty groups left behind
+    int gsize = cJSON_GetArraySize(templates);
+    for (int i = gsize - 1; i >= 0; i--) {
+        cJSON *g = cJSON_GetArrayItem(templates, i);
+        cJSON *barr = cJSON_GetObjectItem(g, "batteries");
+        if (cJSON_IsArray(barr) && cJSON_GetArraySize(barr) == 0) {
+            cJSON_DeleteItemFromArray(templates, i);
+        }
+    }
+
+    // Update cache with the entry removed
+    char *tmp_json = cJSON_PrintUnformatted(templates);
+    cJSON_Delete(templates);
+    if (!tmp_json) {
+        ESP_LOGE(LOG_MODULE_TAG, "Failed to serialize templates after removal");
+        return ESP_FAIL;
+    }
+    free(s_battery_templates_json);
+    s_battery_templates_json = tmp_json;
+
+    // Add updated entry (reuses existing add logic which also saves to file)
+    ESP_LOGI(LOG_MODULE_TAG, "Editing template '%s' in group '%s'", name, category);
+    return configuration_add_battery_template(id, name, category,
+                                               cell_v_min, cell_v_max, current_min, current_max);
+}
+
+/// This function removes a battery template by its id from the cached templates and saves to config file.
+/// If the removal leaves an empty group, that group is also removed.
+///
+/// \param id Unique identifier of the battery to remove
+/// \return ESP_OK on success, otherwise an error code
+esp_err_t configuration_delete_battery_template(const char *id)
+{
+    cJSON *templates = NULL;
+    if (s_battery_templates_json) {
+        templates = cJSON_Parse(s_battery_templates_json);
+    }
+    if (!templates) {
+        ESP_LOGE(LOG_MODULE_TAG, "No templates to delete from");
+        return ESP_FAIL;
+    }
+
+    bool found = false;
+    cJSON *group = NULL;
+    cJSON_ArrayForEach(group, templates) {
+        cJSON *batteries = cJSON_GetObjectItem(group, "batteries");
+        if (!cJSON_IsArray(batteries)) continue;
+        int size = cJSON_GetArraySize(batteries);
+        for (int i = 0; i < size; i++) {
+            cJSON *b = cJSON_GetArrayItem(batteries, i);
+            cJSON *bid = cJSON_GetObjectItem(b, "id");
+            if (cJSON_IsString(bid) && strcmp(bid->valuestring, id) == 0) {
+                cJSON_DeleteItemFromArray(batteries, i);
+                found = true;
+                break;
+            }
+        }
+        if (found) break;
+    }
+
+    if (!found) {
+        cJSON_Delete(templates);
+        ESP_LOGW(LOG_MODULE_TAG, "Template '%s' not found for deletion", id);
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    // Remove empty groups
+    int gsize = cJSON_GetArraySize(templates);
+    for (int i = gsize - 1; i >= 0; i--) {
+        cJSON *g = cJSON_GetArrayItem(templates, i);
+        cJSON *barr = cJSON_GetObjectItem(g, "batteries");
+        if (cJSON_IsArray(barr) && cJSON_GetArraySize(barr) == 0) {
+            cJSON_DeleteItemFromArray(templates, i);
+        }
+    }
+
+    char *new_json = cJSON_PrintUnformatted(templates);
+    cJSON_Delete(templates);
+    if (!new_json) {
+        ESP_LOGE(LOG_MODULE_TAG, "Failed to serialize templates after delete");
+        return ESP_FAIL;
+    }
+
+    free(s_battery_templates_json);
+    s_battery_templates_json = new_json;
+
+    ESP_LOGI(LOG_MODULE_TAG, "Battery template '%s' deleted", id);
+    return configuration_save("/spiffs/config.json");
 }
 
 /*==============================================================================================================*/

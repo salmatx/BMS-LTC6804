@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>BMS Configuration</title>
   <link rel="stylesheet" href="/bms/css/style.css">
+  <script src="/bms/js/batteries.js"></script>
 </head>
 <body>
   <div class="container">
@@ -68,26 +69,60 @@
         </div>
       </div>
 
+      <!-- Battery Template Selection -->
+      <div id="templateContainer">
+      <h3>Battery Template</h3>
+      <div class="form-group">
+        <label for="battery_template">Select Battery:</label>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <select id="battery_template" name="battery_template" style="flex:1;">
+            <option value="">-- Select Battery --</option>
+            <!-- Options populated dynamically from batteries.js -->
+          </select>
+          <button type="button" class="btn-success" style="padding:8px 14px;font-size:14px;" onclick="newTemplate()" title="Create new custom template">New</button>
+          <button type="button" class="btn-primary" style="padding:8px 14px;font-size:14px;" onclick="editTemplate()" title="Edit selected template">Edit</button>
+          <button type="button" class="btn-danger" style="padding:8px 14px;font-size:14px;" onclick="removeTemplate()" title="Remove selected template">Remove</button>
+        </div>
+      </div>
+
+      <!-- Save / Edit Template -->
+      <div id="customTemplateSection" style="display:none;">
+        <h3 id="templateSectionTitle">Save as Battery Template</h3>
+        <div class="grid">
+          <div class="form-group">
+            <label for="battery_name">Battery Name: <span class="hint">(mandatory for template)</span></label>
+            <input type="text" id="battery_name" maxlength="63" placeholder="e.g. My Custom Cell">
+          </div>
+          <div class="form-group">
+            <label for="battery_category">Battery Category: <span class="hint">(mandatory for template)</span></label>
+            <select id="battery_category">
+              <option value="">-- Select Category --</option>
+            </select>
+          </div>
+        </div>
+        <input type="hidden" id="edit_template_id" value="">
+      </div>
+
       <h3>Voltage Thresholds</h3>
       <div class="grid">
         <div class="form-group">
           <label for="cell_v_min">Cell Min Voltage (V):</label>
-          <input type="number" id="cell_v_min" name="cell_v_min" step="0.01" min="2.5" max="3.5" required>
+          <input type="number" id="cell_v_min" name="cell_v_min" step="0.01" min="0.5" max="5.0" disabled required>
         </div>
         <div class="form-group">
           <label for="cell_v_max">Cell Max Voltage (V):</label>
-          <input type="number" id="cell_v_max" name="cell_v_max" step="0.01" min="3.5" max="4.5" required>
+          <input type="number" id="cell_v_max" name="cell_v_max" step="0.01" min="0.5" max="5.0" disabled required>
         </div>
       </div>
 
       <div class="grid">
         <div class="form-group">
           <label for="pack_v_min">Pack Min Voltage (V):</label>
-          <input type="number" id="pack_v_min" name="pack_v_min" step="0.1" min="0" max="100" required>
+          <input type="number" id="pack_v_min" name="pack_v_min" step="0.1" min="0" max="1000" disabled required>
         </div>
         <div class="form-group">
           <label for="pack_v_max">Pack Max Voltage (V):</label>
-          <input type="number" id="pack_v_max" name="pack_v_max" step="0.1" min="0" max="100" required>
+          <input type="number" id="pack_v_max" name="pack_v_max" step="0.1" min="0" max="1000" disabled required>
         </div>
       </div>
 
@@ -95,13 +130,23 @@
       <div class="grid">
         <div class="form-group">
           <label for="current_min">Min Current (A):</label>
-          <input type="number" id="current_min" name="current_min" step="0.1" min="-200" max="0" required>
+          <input type="number" id="current_min" name="current_min" step="0.1" min="-5000" max="0" disabled required>
         </div>
         <div class="form-group">
           <label for="current_max">Max Current (A):</label>
-          <input type="number" id="current_max" name="current_max" step="0.1" min="0" max="200" required>
+          <input type="number" id="current_max" name="current_max" step="0.1" min="0" max="5000" disabled required>
         </div>
       </div>
+
+      <!-- Template action buttons (shown in custom/edit mode) -->
+      <div id="templateActions" style="display:none;">
+        <div class="btn-group">
+          <button type="button" class="btn-save" id="btnSaveCustom" onclick="saveCustomTemplate()">Save custom</button>
+          <button type="button" class="btn-primary" id="btnUpdateTemplate" style="display:none;" onclick="updateTemplate()">Update template</button>
+          <button type="button" class="btn-cancel" id="btnCancelEdit" onclick="cancelEditTemplate()">Cancel</button>
+        </div>
+      </div>
+      </div><!-- /templateContainer -->
 
       <!-- Buttons -->
       <div class="btn-group">
@@ -112,16 +157,127 @@
   </div>
 
   <script>
+    // Field IDs for battery parameters (voltage + current)
+    var BATT_FIELDS = ['cell_v_min', 'cell_v_max', 'pack_v_min', 'pack_v_max', 'current_min', 'current_max'];
+    var customMode = false;
+
     function fmt2(x) {
       if (x === undefined || x === null || x === '') return '';
       return Number(x).toFixed(2);
     }
 
+    // Recalculate pack voltages based on num_cells and cell voltages
+    function updatePackVoltages() {
+      var n = parseInt(document.getElementById('num_cells').value) || 1;
+      var cvMin = parseFloat(document.getElementById('cell_v_min').value) || 0;
+      var cvMax = parseFloat(document.getElementById('cell_v_max').value) || 0;
+      document.getElementById('pack_v_min').value = fmt2(n * cvMin);
+      document.getElementById('pack_v_max').value = fmt2(n * cvMax);
+    }
+
+    // Apply battery template values to form fields
+    function applyTemplate(key) {
+      var tpl = BATTERIES[key];
+      if (!tpl) return;
+      document.getElementById('cell_v_min').value = fmt2(tpl.cell_v_min);
+      document.getElementById('cell_v_max').value = fmt2(tpl.cell_v_max);
+      document.getElementById('current_min').value = fmt2(tpl.current_min);
+      document.getElementById('current_max').value = fmt2(tpl.current_max);
+      updatePackVoltages();
+    }
+
+    // Toggle disabled state of battery parameter fields
+    function setBattFieldsDisabled(isDisabled) {
+      BATT_FIELDS.forEach(function(id) {
+        document.getElementById(id).disabled = isDisabled;
+      });
+    }
+
+    // Handle battery template dropdown change
+    function onTemplateChange() {
+      var sel = document.getElementById('battery_template');
+      if (sel.value && !customMode) {
+        applyTemplate(sel.value);
+      }
+    }
+
+    // Enter custom/new template mode
+    function setCustomMode(enabled) {
+      customMode = enabled;
+      var sel = document.getElementById('battery_template');
+      var customSection = document.getElementById('customTemplateSection');
+      var templateActions = document.getElementById('templateActions');
+      var container = document.getElementById('templateContainer');
+      if (enabled) {
+        setBattFieldsDisabled(false);
+        sel.disabled = true;
+        customSection.style.display = 'block';
+        templateActions.style.display = 'block';
+        container.style.background = '#e3f2fd';
+        container.style.borderRadius = '8px';
+        container.style.padding = '16px';
+        container.style.marginLeft = '-16px';
+        container.style.marginRight = '-16px';
+      } else {
+        setBattFieldsDisabled(true);
+        sel.disabled = false;
+        customSection.style.display = 'none';
+        templateActions.style.display = 'none';
+        container.style.background = '';
+        container.style.borderRadius = '';
+        container.style.padding = '';
+        container.style.marginLeft = '';
+        container.style.marginRight = '';
+        if (sel.value) {
+          applyTemplate(sel.value);
+        }
+      }
+    }
+
+    // "New" button handler - enter custom mode for creating a new template
+    function newTemplate() {
+      setCustomMode(true);
+      document.getElementById('battery_name').value = '';
+      document.getElementById('edit_template_id').value = '';
+      document.getElementById('btnSaveCustom').style.display = '';
+      document.getElementById('btnUpdateTemplate').style.display = 'none';
+      document.getElementById('btnCancelEdit').style.display = '';
+      document.getElementById('templateSectionTitle').textContent = 'Save as Battery Template';
+    }
+
     // Load current configuration
     window.addEventListener('DOMContentLoaded', function() {
       fetch('/bms/config/data')
-        .then(response => response.json())
-        .then(data => {
+        .then(function(response) { return response.json(); })
+        .then(function(data) {
+          // Fetch battery templates from dedicated lightweight endpoint
+          fetch('/bms/config/templates')
+            .then(function(tr) { return tr.json(); })
+            .then(function(templates) {
+              initBatteryTemplates(templates || [], 'battery_template');
+              populateCategories(templates || []);
+
+              // Try to match loaded config to a battery template
+              var matched = '';
+              var cvMin = parseFloat(fmt2(data.battery.cell_v_min));
+              var cvMax = parseFloat(fmt2(data.battery.cell_v_max));
+              var cMin  = parseFloat(fmt2(data.battery.current_min));
+              var cMax  = parseFloat(fmt2(data.battery.current_max));
+              for (var key in BATTERIES) {
+                var t = BATTERIES[key];
+                if (Math.abs(t.cell_v_min - cvMin) < 0.005 &&
+                    Math.abs(t.cell_v_max - cvMax) < 0.005 &&
+                    Math.abs(t.current_min - cMin) < 0.05 &&
+                    Math.abs(t.current_max - cMax) < 0.05) {
+                  matched = key;
+                  break;
+                }
+              }
+              if (matched) {
+                document.getElementById('battery_template').value = matched;
+              }
+            });
+
           document.getElementById('wifi_ssid').value = data.wifi.ssid || '';
           document.getElementById('wifi_pass').placeholder = '(unchanged)';
           document.getElementById('wifi_static_ip').value = data.wifi.static_ip || '';
@@ -136,33 +292,234 @@
           document.getElementById('pack_v_max').value = fmt2(data.battery.pack_v_max) || '58.80';
           document.getElementById('current_min').value = fmt2(data.battery.current_min) || '-30.00';
           document.getElementById('current_max').value = fmt2(data.battery.current_max) || '60.00';
-          
+
+          // Fields start disabled (template mode)
+          setBattFieldsDisabled(true);
+
           document.getElementById('loadingMsg').style.display = 'none';
           document.getElementById('configForm').style.display = 'block';
         })
-        .catch(err => {
+        .catch(function(err) {
           document.getElementById('loadingMsg').innerHTML = '<strong>Error loading configuration!</strong>';
           console.error('Error:', err);
         });
+
+      // Event listeners
+      document.getElementById('battery_template').addEventListener('change', onTemplateChange);
+      document.getElementById('num_cells').addEventListener('change', function() {
+        var sel = document.getElementById('battery_template');
+        if (sel.value && !customMode) {
+          updatePackVoltages();
+        }
+      });
     });
 
-    // Form submission with confirmation
+    // Before form submission: enable all disabled fields so their values are submitted
     document.getElementById('configForm').addEventListener('submit', function(e) {
       if (!confirm('Save configuration and restart ESP32?')) {
         e.preventDefault();
+        return;
       }
+      // Enable disabled inputs so values are included in POST data
+      BATT_FIELDS.forEach(function(id) {
+        document.getElementById(id).disabled = false;
+      });
     });
 
     // Cancel configuration - clear flag and restart
     function cancelConfig() {
       if (confirm('Exit configuration mode without saving changes?')) {
-        // Create and submit a hidden form to POST to cancel endpoint
-        const form = document.createElement('form');
+        var form = document.createElement('form');
         form.method = 'POST';
         form.action = '/bms/config/cancel';
         document.body.appendChild(form);
         form.submit();
       }
+    }
+
+    // Populate battery category dropdown from template groups
+    function populateCategories(groups) {
+      var sel = document.getElementById('battery_category');
+      if (!sel || !Array.isArray(groups)) return;
+      groups.forEach(function(group) {
+        var opt = document.createElement('option');
+        opt.value = group.label;
+        opt.textContent = group.label;
+        sel.appendChild(opt);
+      });
+    }
+
+    // Generate next custom battery ID based on existing templates
+    function nextCustomId() {
+      var max = 0;
+      for (var key in BATTERIES) {
+        if (key.indexOf('custom_') === 0) {
+          var n = parseInt(key.substring(7));
+          if (!isNaN(n) && n > max) max = n;
+        }
+      }
+      return 'custom_' + (max + 1);
+    }
+
+    // Shared function to reload templates dropdown after a change
+    function reloadTemplates(selectValue) {
+      fetch('/bms/config/templates')
+        .then(function(r) { return r.json(); })
+        .then(function(templates) {
+          var sel = document.getElementById('battery_template');
+          while (sel.childNodes.length > 1) sel.removeChild(sel.lastChild);
+          initBatteryTemplates(templates || [], 'battery_template');
+          if (selectValue) sel.value = selectValue;
+          var catSel = document.getElementById('battery_category');
+          while (catSel.options.length > 1) catSel.remove(1);
+          populateCategories(templates || []);
+        });
+    }
+
+    // Enter edit mode for the currently selected template
+    function editTemplate() {
+      var sel = document.getElementById('battery_template');
+      if (!sel.value) { alert('Select a template to edit first.'); return; }
+      var tpl = BATTERIES[sel.value];
+      if (!tpl) return;
+
+      // Switch to custom/edit mode
+      setCustomMode(true);
+
+      // Fill battery fields from template
+      applyTemplate(sel.value);
+
+      // Fill name from the dropdown option text, find category from BATTERY_GROUPS
+      var selectedOpt = sel.options[sel.selectedIndex];
+      document.getElementById('battery_name').value = selectedOpt ? selectedOpt.textContent : '';
+      document.getElementById('edit_template_id').value = sel.value;
+
+      // Try to set category from the optgroup
+      if (selectedOpt && selectedOpt.parentNode && selectedOpt.parentNode.label) {
+        document.getElementById('battery_category').value = selectedOpt.parentNode.label;
+      }
+
+      // Show update/cancel, hide save custom
+      document.getElementById('btnSaveCustom').style.display = 'none';
+      document.getElementById('btnUpdateTemplate').style.display = '';
+      document.getElementById('btnCancelEdit').style.display = '';
+      document.getElementById('templateSectionTitle').textContent = 'Edit Battery Template';
+    }
+
+    // Cancel edit mode and return to normal
+    function cancelEditTemplate() {
+      document.getElementById('edit_template_id').value = '';
+      document.getElementById('battery_name').value = '';
+      document.getElementById('btnSaveCustom').style.display = '';
+      document.getElementById('btnUpdateTemplate').style.display = 'none';
+      document.getElementById('btnCancelEdit').style.display = 'none';
+      document.getElementById('templateSectionTitle').textContent = 'Save as Battery Template';
+
+      // Exit custom mode and restore
+      setCustomMode(false);
+    }
+
+    // Send updated template to backend
+    function updateTemplate() {
+      var id = document.getElementById('edit_template_id').value;
+      var name = document.getElementById('battery_name').value.trim();
+      var category = document.getElementById('battery_category').value;
+      if (!name) { alert('Battery name is mandatory.'); return; }
+      if (!category) { alert('Battery category is mandatory.'); return; }
+
+      var payload = {
+        id:          id,
+        name:        name,
+        category:    category,
+        cell_v_min:  parseFloat(document.getElementById('cell_v_min').value) || 0,
+        cell_v_max:  parseFloat(document.getElementById('cell_v_max').value) || 0,
+        current_min: parseFloat(document.getElementById('current_min').value) || 0,
+        current_max: parseFloat(document.getElementById('current_max').value) || 0
+      };
+
+      fetch('/bms/config/template/edit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+      .then(function(resp) { return resp.json(); })
+      .then(function(result) {
+        if (result.ok) {
+          alert('Template updated successfully.');
+          cancelEditTemplate();
+          reloadTemplates(id);
+        } else {
+          alert('Failed to update template: ' + (result.error || 'unknown error'));
+        }
+      })
+      .catch(function(err) { alert('Error updating template: ' + err); });
+    }
+
+    // Remove the currently selected template
+    function removeTemplate() {
+      var sel = document.getElementById('battery_template');
+      if (!sel.value) { alert('Select a template to remove first.'); return; }
+      var name = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].textContent : sel.value;
+      if (!confirm('Remove template "' + name + '"?')) return;
+
+      fetch('/bms/config/template/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: sel.value })
+      })
+      .then(function(resp) { return resp.json(); })
+      .then(function(result) {
+        if (result.ok) {
+          alert('Template removed.');
+          reloadTemplates();
+        } else {
+          alert('Failed to remove template: ' + (result.error || 'unknown error'));
+        }
+      })
+      .catch(function(err) { alert('Error removing template: ' + err); });
+    }
+
+    // Save current battery values as a custom template
+    function saveCustomTemplate() {
+      var name = document.getElementById('battery_name').value.trim();
+      var category = document.getElementById('battery_category').value;
+
+      if (!name) {
+        alert('Battery name is mandatory for saving a template.');
+        return;
+      }
+      if (!category) {
+        alert('Battery category is mandatory for saving a template.');
+        return;
+      }
+
+      var payload = {
+        id:          nextCustomId(),
+        name:        name,
+        category:    category,
+        cell_v_min:  parseFloat(document.getElementById('cell_v_min').value) || 0,
+        cell_v_max:  parseFloat(document.getElementById('cell_v_max').value) || 0,
+        current_min: parseFloat(document.getElementById('current_min').value) || 0,
+        current_max: parseFloat(document.getElementById('current_max').value) || 0
+      };
+
+      fetch('/bms/config/template/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+      .then(function(resp) { return resp.json(); })
+      .then(function(result) {
+        if (result.ok) {
+          alert('Template "' + name + '" saved successfully.');
+          reloadTemplates(payload.id);
+        } else {
+          alert('Failed to save template: ' + (result.error || 'unknown error'));
+        }
+      })
+      .catch(function(err) {
+        alert('Error saving template: ' + err);
+      });
     }
   </script>
 </body>

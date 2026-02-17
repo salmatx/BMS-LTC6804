@@ -116,7 +116,8 @@ label {
 
 input[type="text"],
 input[type="password"],
-input[type="number"] {
+input[type="number"],
+select {
   width: 100%;
   padding: 10px;
   border: 1px solid #ddd;
@@ -124,9 +125,21 @@ input[type="number"] {
   font-size: 14px;
 }
 
-input:focus {
+input:focus,
+select:focus {
   outline: none;
   border-color: #4CAF50;
+}
+
+input:disabled,
+select:disabled {
+  background: #eee;
+  color: #999;
+  cursor: not-allowed;
+}
+
+select {
+  appearance: auto;
 }
 
 .grid {

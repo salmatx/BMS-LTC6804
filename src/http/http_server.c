@@ -45,11 +45,16 @@ static esp_err_t send_error_modal(httpd_req_t *req, const char *title, const cha
 static esp_err_t h_config_data(httpd_req_t *req);
 static esp_err_t h_config_save(httpd_req_t *req);
 static esp_err_t h_config_cancel(httpd_req_t *req);
+static esp_err_t h_template_save(httpd_req_t *req);
+static esp_err_t h_template_edit(httpd_req_t *req);
+static esp_err_t h_template_delete(httpd_req_t *req);
+static esp_err_t h_config_templates(httpd_req_t *req);
 static esp_err_t h_root_redirect(httpd_req_t *req);
 static esp_err_t h_index(httpd_req_t *req);
 static esp_err_t h_stats_page(httpd_req_t *req);
 static esp_err_t h_config_page(httpd_req_t *req);
 static esp_err_t h_js_charts(httpd_req_t *req);
+static esp_err_t h_js_batteries(httpd_req_t *req);
 static esp_err_t h_css_style(httpd_req_t *req);
 static esp_err_t h_stats_data(httpd_req_t *req);
 static esp_err_t h_led_on(httpd_req_t *req);
@@ -89,7 +94,7 @@ esp_err_t http_server_start(void)
     cfg.core_id = 0;
     cfg.stack_size = 8192;
     cfg.task_priority = 4;
-    cfg.max_uri_handlers = 16;
+    cfg.max_uri_handlers = 20;
 
     if (httpd_start(&s_httpd, &cfg) != ESP_OK) {
         s_httpd = NULL;
@@ -101,10 +106,15 @@ esp_err_t http_server_start(void)
     httpd_uri_t u_stats         = { .uri = "/bms/stats",            .method = HTTP_GET,  .handler = h_stats_page };
     httpd_uri_t u_cfg           = { .uri = "/bms/config",           .method = HTTP_GET,  .handler = h_config_page };
     httpd_uri_t u_js            = { .uri = "/bms/js/charts.js",     .method = HTTP_GET,  .handler = h_js_charts };
+    httpd_uri_t u_js_batt       = { .uri = "/bms/js/batteries.js",   .method = HTTP_GET,  .handler = h_js_batteries };
     httpd_uri_t u_data          = { .uri = "/bms/stats/data",       .method = HTTP_GET,  .handler = h_stats_data };
     httpd_uri_t u_cfg_data      = { .uri = "/bms/config/data",      .method = HTTP_GET,  .handler = h_config_data };
     httpd_uri_t u_cfg_save      = { .uri = "/bms/config/save",      .method = HTTP_POST, .handler = h_config_save };
     httpd_uri_t u_cfg_cancel    = { .uri = "/bms/config/cancel",    .method = HTTP_POST, .handler = h_config_cancel };
+    httpd_uri_t u_tpl_save      = { .uri = "/bms/config/template/save", .method = HTTP_POST, .handler = h_template_save };
+    httpd_uri_t u_tpl_edit      = { .uri = "/bms/config/template/edit", .method = HTTP_POST, .handler = h_template_edit };
+    httpd_uri_t u_tpl_del       = { .uri = "/bms/config/template/delete", .method = HTTP_POST, .handler = h_template_delete };
+    httpd_uri_t u_cfg_tpl       = { .uri = "/bms/config/templates",  .method = HTTP_GET,  .handler = h_config_templates };
     httpd_uri_t u_css           = { .uri = "/bms/css/style.css",    .method = HTTP_GET,  .handler = h_css_style };
     httpd_uri_t u_led_on        = { .uri = "/bms/led/on",           .method = HTTP_POST, .handler = h_led_on };
     httpd_uri_t u_led_off       = { .uri = "/bms/led/off",          .method = HTTP_POST, .handler = h_led_off };
@@ -115,10 +125,15 @@ esp_err_t http_server_start(void)
     httpd_register_uri_handler(s_httpd, &u_stats);
     httpd_register_uri_handler(s_httpd, &u_cfg);
     httpd_register_uri_handler(s_httpd, &u_js);
+    httpd_register_uri_handler(s_httpd, &u_js_batt);
     httpd_register_uri_handler(s_httpd, &u_data);
     httpd_register_uri_handler(s_httpd, &u_cfg_data);
     httpd_register_uri_handler(s_httpd, &u_cfg_save);
     httpd_register_uri_handler(s_httpd, &u_cfg_cancel);
+    httpd_register_uri_handler(s_httpd, &u_tpl_save);
+    httpd_register_uri_handler(s_httpd, &u_tpl_edit);
+    httpd_register_uri_handler(s_httpd, &u_tpl_del);
+    httpd_register_uri_handler(s_httpd, &u_cfg_tpl);
     httpd_register_uri_handler(s_httpd, &u_css);
     httpd_register_uri_handler(s_httpd, &u_led_on);
     httpd_register_uri_handler(s_httpd, &u_led_off);
@@ -502,6 +517,202 @@ static esp_err_t h_config_cancel(httpd_req_t *req)
     return send_err;
 }
 
+/// This is the GET handler for serving battery templates JSON.
+/// Serves the cached templates string directly without cJSON parsing to minimize heap usage.
+///
+/// \param req Pointer to HTTP request structure
+/// \return ESP_OK on success, otherwise an error code
+static esp_err_t h_config_templates(httpd_req_t *req)
+{
+    httpd_resp_set_type(req, "application/json");
+    const char *tpl = configuration_get_battery_templates_json();
+    return httpd_resp_sendstr(req, tpl ? tpl : "[]");
+}
+
+/// This is the POST handler for saving a custom battery template. It receives a JSON body with
+/// battery parameters and adds the template to the battery_templates array stored in config.json.
+///
+/// \param req Pointer to HTTP request structure
+/// \return ESP_OK on success, otherwise an error code
+static esp_err_t h_template_save(httpd_req_t *req)
+{
+    char buf[512];
+    int remaining = req->content_len;
+
+    if (remaining >= (int)sizeof(buf)) {
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_sendstr(req, "{\"ok\":false,\"error\":\"Content too long\"}");
+    }
+
+    int ret = httpd_req_recv(req, buf, remaining);
+    if (ret <= 0) {
+        if (ret == HTTPD_SOCK_ERR_TIMEOUT) httpd_resp_send_408(req);
+        return ESP_FAIL;
+    }
+    buf[ret] = '\0';
+
+    BMS_LOGI("Received template save request: %s", buf);
+
+    cJSON *body = cJSON_Parse(buf);
+    if (!body) {
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_sendstr(req, "{\"ok\":false,\"error\":\"Invalid JSON\"}");
+    }
+
+    cJSON *jid   = cJSON_GetObjectItem(body, "id");
+    cJSON *jname = cJSON_GetObjectItem(body, "name");
+    cJSON *jcat  = cJSON_GetObjectItem(body, "category");
+
+    if (!cJSON_IsString(jid) || !cJSON_IsString(jname) || !cJSON_IsString(jcat) ||
+        strlen(jname->valuestring) == 0 || strlen(jcat->valuestring) == 0) {
+        cJSON_Delete(body);
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_sendstr(req, "{\"ok\":false,\"error\":\"Missing required fields\"}");
+    }
+
+    float cell_v_min  = 0, cell_v_max = 0, current_min = 0, current_max = 0;
+    cJSON *jval;
+    jval = cJSON_GetObjectItem(body, "cell_v_min");  if (cJSON_IsNumber(jval)) cell_v_min  = (float)jval->valuedouble;
+    jval = cJSON_GetObjectItem(body, "cell_v_max");  if (cJSON_IsNumber(jval)) cell_v_max  = (float)jval->valuedouble;
+    jval = cJSON_GetObjectItem(body, "current_min"); if (cJSON_IsNumber(jval)) current_min = (float)jval->valuedouble;
+    jval = cJSON_GetObjectItem(body, "current_max"); if (cJSON_IsNumber(jval)) current_max = (float)jval->valuedouble;
+
+    // Copy strings before freeing body to reduce peak heap usage during save
+    char id_buf[64] = {0}, name_buf[64] = {0}, cat_buf[64] = {0};
+    strncpy(id_buf,   jid->valuestring,   sizeof(id_buf) - 1);
+    strncpy(name_buf, jname->valuestring, sizeof(name_buf) - 1);
+    strncpy(cat_buf,  jcat->valuestring,  sizeof(cat_buf) - 1);
+    cJSON_Delete(body);
+
+    esp_err_t err = configuration_add_battery_template(
+        id_buf, name_buf, cat_buf,
+        cell_v_min, cell_v_max, current_min, current_max);
+
+    httpd_resp_set_type(req, "application/json");
+    if (err == ESP_OK) {
+        return httpd_resp_sendstr(req, "{\"ok\":true}");
+    } else {
+        return httpd_resp_sendstr(req, "{\"ok\":false,\"error\":\"Failed to save template\"}");
+    }
+}
+
+/// This is the POST handler for editing an existing battery template. It receives a JSON body
+/// with the template id and updated parameters, then replaces the template in config.json.
+///
+/// \param req Pointer to HTTP request structure
+/// \return ESP_OK on success, otherwise an error code
+static esp_err_t h_template_edit(httpd_req_t *req)
+{
+    char buf[512];
+    int remaining = req->content_len;
+
+    if (remaining >= (int)sizeof(buf)) {
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_sendstr(req, "{\"ok\":false,\"error\":\"Content too long\"}");
+    }
+
+    int ret = httpd_req_recv(req, buf, remaining);
+    if (ret <= 0) {
+        if (ret == HTTPD_SOCK_ERR_TIMEOUT) httpd_resp_send_408(req);
+        return ESP_FAIL;
+    }
+    buf[ret] = '\0';
+
+    BMS_LOGI("Received template edit request: %s", buf);
+
+    cJSON *body = cJSON_Parse(buf);
+    if (!body) {
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_sendstr(req, "{\"ok\":false,\"error\":\"Invalid JSON\"}");
+    }
+
+    cJSON *jid   = cJSON_GetObjectItem(body, "id");
+    cJSON *jname = cJSON_GetObjectItem(body, "name");
+    cJSON *jcat  = cJSON_GetObjectItem(body, "category");
+
+    if (!cJSON_IsString(jid) || !cJSON_IsString(jname) || !cJSON_IsString(jcat) ||
+        strlen(jid->valuestring) == 0 || strlen(jname->valuestring) == 0 || strlen(jcat->valuestring) == 0) {
+        cJSON_Delete(body);
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_sendstr(req, "{\"ok\":false,\"error\":\"Missing required fields\"}");
+    }
+
+    float cell_v_min = 0, cell_v_max = 0, current_min = 0, current_max = 0;
+    cJSON *jval;
+    jval = cJSON_GetObjectItem(body, "cell_v_min");  if (cJSON_IsNumber(jval)) cell_v_min  = (float)jval->valuedouble;
+    jval = cJSON_GetObjectItem(body, "cell_v_max");  if (cJSON_IsNumber(jval)) cell_v_max  = (float)jval->valuedouble;
+    jval = cJSON_GetObjectItem(body, "current_min"); if (cJSON_IsNumber(jval)) current_min = (float)jval->valuedouble;
+    jval = cJSON_GetObjectItem(body, "current_max"); if (cJSON_IsNumber(jval)) current_max = (float)jval->valuedouble;
+
+    char id_buf[64] = {0}, name_buf[64] = {0}, cat_buf[64] = {0};
+    strncpy(id_buf,   jid->valuestring,   sizeof(id_buf) - 1);
+    strncpy(name_buf, jname->valuestring, sizeof(name_buf) - 1);
+    strncpy(cat_buf,  jcat->valuestring,  sizeof(cat_buf) - 1);
+    cJSON_Delete(body);
+
+    esp_err_t err = configuration_edit_battery_template(
+        id_buf, name_buf, cat_buf,
+        cell_v_min, cell_v_max, current_min, current_max);
+
+    httpd_resp_set_type(req, "application/json");
+    if (err == ESP_OK) {
+        return httpd_resp_sendstr(req, "{\"ok\":true}");
+    } else {
+        return httpd_resp_sendstr(req, "{\"ok\":false,\"error\":\"Failed to edit template\"}");
+    }
+}
+
+/// This is the POST handler for deleting a battery template. It receives a JSON body
+/// with the template id and removes it from the battery_templates array in config.json.
+///
+/// \param req Pointer to HTTP request structure
+/// \return ESP_OK on success, otherwise an error code
+static esp_err_t h_template_delete(httpd_req_t *req)
+{
+    char buf[256];
+    int remaining = req->content_len;
+
+    if (remaining >= (int)sizeof(buf)) {
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_sendstr(req, "{\"ok\":false,\"error\":\"Content too long\"}");
+    }
+
+    int ret = httpd_req_recv(req, buf, remaining);
+    if (ret <= 0) {
+        if (ret == HTTPD_SOCK_ERR_TIMEOUT) httpd_resp_send_408(req);
+        return ESP_FAIL;
+    }
+    buf[ret] = '\0';
+
+    BMS_LOGI("Received template delete request: %s", buf);
+
+    cJSON *body = cJSON_Parse(buf);
+    if (!body) {
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_sendstr(req, "{\"ok\":false,\"error\":\"Invalid JSON\"}");
+    }
+
+    cJSON *jid = cJSON_GetObjectItem(body, "id");
+    if (!cJSON_IsString(jid) || strlen(jid->valuestring) == 0) {
+        cJSON_Delete(body);
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_sendstr(req, "{\"ok\":false,\"error\":\"Missing id\"}");
+    }
+
+    char id_buf[64] = {0};
+    strncpy(id_buf, jid->valuestring, sizeof(id_buf) - 1);
+    cJSON_Delete(body);
+
+    esp_err_t err = configuration_delete_battery_template(id_buf);
+
+    httpd_resp_set_type(req, "application/json");
+    if (err == ESP_OK) {
+        return httpd_resp_sendstr(req, "{\"ok\":true}");
+    } else {
+        return httpd_resp_sendstr(req, "{\"ok\":false,\"error\":\"Failed to delete template\"}");
+    }
+}
+
 /// This is the GET handler for root endpoint that redirects to main BMS page or config page.
 /// If device is in AP mode, redirects to /bms/config for configuration.
 /// Otherwise, redirects to /bms (main page).
@@ -566,6 +777,15 @@ static esp_err_t h_config_page(httpd_req_t *req)
 static esp_err_t h_js_charts(httpd_req_t *req)
 {
     return send_file(req, "/spiffs/bms/js/charts.js", "application/javascript");
+}
+
+/// This is the GET handler for serving battery templates JavaScript file. It serves the batteries.js file.
+///
+/// \param req Pointer to HTTP request structure
+/// \return ESP_OK on success, otherwise an error code
+static esp_err_t h_js_batteries(httpd_req_t *req)
+{
+    return send_file(req, "/spiffs/bms/js/batteries.js", "application/javascript");
 }
 
 /// This is the GET handler for serving CSS stylesheet used by BMS web pages. It serves the style.css file.

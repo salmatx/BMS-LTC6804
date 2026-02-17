@@ -39,6 +39,14 @@ extern configuration_t g_cfg;
 /*==============================================================================================================*/
 esp_err_t configuration_load(const char *path);
 esp_err_t configuration_save(const char *path);
+const char *configuration_get_battery_templates_json(void);
+esp_err_t configuration_add_battery_template(const char *id, const char *name, const char *category,
+                                              float cell_v_min, float cell_v_max,
+                                              float current_min, float current_max);
+esp_err_t configuration_edit_battery_template(const char *id, const char *name, const char *category,
+                                              float cell_v_min, float cell_v_max,
+                                              float current_min, float current_max);
+esp_err_t configuration_delete_battery_template(const char *id);
 
 /*==============================================================================================================*/
 /*                                          Public Inline Functions                                             */
