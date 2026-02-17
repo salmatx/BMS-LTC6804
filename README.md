@@ -28,6 +28,10 @@ Projects uses ESP-IDF framework. It is recommended to use sdkconfig settings as 
 
 - Set Flash size to 4MB
 
+**Compiler options**
+
+- Set Optimization Level to Optimize for size (-Os)
+
 **BMS Network Configuration**
 
 - Set Wi-Fi SSID of used AP
