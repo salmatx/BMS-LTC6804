@@ -33,4 +33,4 @@
 /*==============================================================================================================*/
 esp_err_t  bms_stats_hist_init(void);
 void bms_stats_hist_push(const char *json, size_t len);
-esp_err_t  bms_stats_hist_send_as_json_array(struct httpd_req *req);
+esp_err_t  bms_stats_hist_send_latest(struct httpd_req *req);

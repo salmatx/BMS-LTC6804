@@ -302,6 +302,7 @@ static esp_err_t h_config_data(httpd_req_t *req)
 
     cJSON_AddItemToObject(root, "wifi", wifi);
     cJSON_AddStringToObject(wifi, "ssid", g_cfg.wifi.ssid);
+    cJSON_AddBoolToObject(wifi, "no_pass", g_cfg.wifi.pass[0] == '\0');
     cJSON_AddStringToObject(wifi, "static_ip", g_cfg.wifi.static_ip);
     cJSON_AddStringToObject(wifi, "gateway", g_cfg.wifi.gateway);
     cJSON_AddStringToObject(wifi, "netmask", g_cfg.wifi.netmask);
@@ -404,8 +405,16 @@ static esp_err_t h_config_save(httpd_req_t *req)
         g_cfg.wifi.netmask[sizeof(g_cfg.wifi.netmask) - 1] = '\0';
     }
 
-    // Only update password if provided (not empty)
-    if (parse_post_param(buf, "wifi_pass", value, sizeof(value)) == ESP_OK) {
+    // Check if "no password" checkbox was checked
+    bool no_pass = false;
+    if (parse_post_param(buf, "wifi_no_pass", value, sizeof(value)) == ESP_OK) {
+        no_pass = (strcmp(value, "1") == 0 || strcmp(value, "on") == 0);
+    }
+
+    if (no_pass) {
+        BMS_LOGI("No-password mode selected, clearing WiFi password");
+        g_cfg.wifi.pass[0] = '\0';
+    } else if (parse_post_param(buf, "wifi_pass", value, sizeof(value)) == ESP_OK) {
         if (strlen(value) > 0) {
             BMS_LOGI("Updating wifi password");
             strncpy(g_cfg.wifi.pass, value, sizeof(g_cfg.wifi.pass) - 1);
@@ -797,14 +806,14 @@ static esp_err_t h_css_style(httpd_req_t *req)
     return send_file(req, "/spiffs/bms/css/style.css", "text/css");
 }
 
-/// This is the GET handler for retrieving historical statistics data as JSON array response. It calls
-/// function from stats history module to build and send the JSON data to the HTTP client.
+/// This is the GET handler for retrieving the latest statistics sample as a single JSON object.
+/// History is maintained on the browser side.
 ///
 /// \param req Pointer to HTTP request structure
 /// \return ESP_OK on success, otherwise an error code
 static esp_err_t h_stats_data(httpd_req_t *req)
 {
-    return bms_stats_hist_send_as_json_array(req);
+    return bms_stats_hist_send_latest(req);
 }
 
 /// This fuction validates if the given string is a valid IPv4 address using inet_pton.

@@ -1,5 +1,5 @@
-/// This module implements a history buffer for storing JSON-formatted BMS statistics windows
-/// and provides functionality to send the stored data as a JSON array via HTTP response.
+/// This module stores the latest JSON-formatted BMS statistics sample
+/// and provides functionality to send it as a single JSON object via HTTP response.
 
 /*==============================================================================================================*/
 /*                                                Includes                                                      */
@@ -7,7 +7,6 @@
 #include "stats_history.h"
 #include "logging.h"
 
-#include <stdlib.h>
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/portmacro.h"
@@ -19,32 +18,9 @@
 /// Log module tag used by logging module
 #define LOG_MODULE_TAG "BMS_HIST"
 
-/// Definition of time span for statistics history to be saved and displayed via HTTP (in seconds).
-#define BMS_HTTP_SECONDS           30u
-/// Maximum count of statistics windows stored per second.
-#define BMS_MAX_WINDOWS_PER_SEC    4u
-/// Total capacity of statistics history buffer.
-#define BMS_HTTP_HISTORY_CAPACITY  (BMS_HTTP_SECONDS * BMS_MAX_WINDOWS_PER_SEC)
-
-
-
 /*==============================================================================================================*/
 /*                                              Private Types                                                   */
 /*==============================================================================================================*/
-/// Structure representing one history item
-typedef struct {
-    char     json[BMS_STATS_JSON_MAXLEN];   ///< JSON string of the statistics window
-    uint16_t len;                           ///< Length of the JSON string
-} hist_item_t;
-
-/// Structure representing the circular buffer for statistics history
-typedef struct {
-    hist_item_t  *items;                           ///< Heap-allocated circular buffer array
-    uint16_t      head;                            ///< Next write position
-    uint16_t      count;                           ///< Valid entries count
-    uint16_t      capacity;                        ///< Buffer capacity
-    portMUX_TYPE  lock;                            ///< Synchronization lock for thread safety
-} stats_history_buffer_t;
 
 /*==============================================================================================================*/
 /*                                       Private Function Prototypes                                            */
@@ -57,14 +33,14 @@ typedef struct {
 /*==============================================================================================================*/
 /*                                            Private Variables                                                 */
 /*==============================================================================================================*/
-/// Circular buffer storing historical statistics windows (items allocated on heap via init)
-static stats_history_buffer_t s_history_buffer = {
-    .items = NULL,
-    .head = 0,
-    .count = 0,
-    .capacity = 0,
-    .lock = portMUX_INITIALIZER_UNLOCKED
-};
+/// Latest statistics sample JSON string
+static char s_latest_json[BMS_STATS_JSON_MAXLEN];
+/// Length of the latest JSON string
+static uint16_t s_latest_len = 0;
+/// Flag indicating if a sample has been stored
+static bool s_has_sample = false;
+/// Synchronization lock for thread safety
+static portMUX_TYPE s_lock = portMUX_INITIALIZER_UNLOCKED;
 
 /*==============================================================================================================*/
 /*                                      Public Variables and Constants                                          */
@@ -73,110 +49,67 @@ static stats_history_buffer_t s_history_buffer = {
 /*==============================================================================================================*/
 /*                                       Public Function Definitions                                            */
 /*==============================================================================================================*/
-/// This function initializes the statistics history buffer by allocating the items array on the heap.
+/// This function initializes the latest statistics sample storage.
 /// Must be called once before any push or send operations.
 ///
 /// \param None
-/// \return ESP_OK on success, ESP_ERR_NO_MEM if allocation fails
+/// \return ESP_OK always
 esp_err_t bms_stats_hist_init(void)
 {
-    s_history_buffer.items = calloc(BMS_HTTP_HISTORY_CAPACITY, sizeof(hist_item_t));
-    if (!s_history_buffer.items) {
-        BMS_LOGE("Failed to allocate history buffer (%u bytes)",
-                 (unsigned)(BMS_HTTP_HISTORY_CAPACITY * sizeof(hist_item_t)));
-        return ESP_ERR_NO_MEM;
-    }
-
-    s_history_buffer.head     = 0;
-    s_history_buffer.count    = 0;
-    s_history_buffer.capacity = BMS_HTTP_HISTORY_CAPACITY;
-
-    BMS_LOGI("History buffer allocated: %u items, %u bytes",
-             (unsigned)BMS_HTTP_HISTORY_CAPACITY,
-             (unsigned)(BMS_HTTP_HISTORY_CAPACITY * sizeof(hist_item_t)));
-
+    s_latest_len = 0;
+    s_has_sample = false;
+    BMS_LOGI("Stats latest-sample store initialized");
     return ESP_OK;
 }
 
-/// This function pushes a new JSON-formatted statistics window into the history buffer.
-/// Note that if the buffer is full, the oldest entry is overwritten.
+/// This function stores the latest JSON-formatted statistics sample,
+/// overwriting any previously stored sample.
 ///
 /// \param json Pointer to JSON string
 /// \param len Length of JSON string
 /// \return None
 void bms_stats_hist_push(const char *json, size_t len)
 {
-    if (!json || len == 0 || !s_history_buffer.items) return;
+    if (!json || len == 0) return;
 
-    taskENTER_CRITICAL(&s_history_buffer.lock);
+    taskENTER_CRITICAL(&s_lock);
 
     if (len >= BMS_STATS_JSON_MAXLEN) len = BMS_STATS_JSON_MAXLEN - 1;
 
-    memcpy(s_history_buffer.items[s_history_buffer.head].json, json, len);
-    s_history_buffer.items[s_history_buffer.head].json[len] = '\0';
-    s_history_buffer.items[s_history_buffer.head].len = (uint16_t)len;
+    memcpy(s_latest_json, json, len);
+    s_latest_json[len] = '\0';
+    s_latest_len = (uint16_t)len;
+    s_has_sample = true;
 
-    s_history_buffer.head = (uint16_t)((s_history_buffer.head + 1u) % s_history_buffer.capacity);
-    if (s_history_buffer.count < s_history_buffer.capacity) s_history_buffer.count++;
-
-    taskEXIT_CRITICAL(&s_history_buffer.lock);
+    taskEXIT_CRITICAL(&s_lock);
 }
 
-/// This function sends the stored statistics history as a JSON array via HTTP response.
+/// This function sends the latest statistics sample as a single JSON object via HTTP response.
+/// Returns JSON "null" if no sample is available yet.
 ///
 /// \param req Pointer to HTTP request structure
 /// \return ESP_OK on success, otherwise an error code
-esp_err_t bms_stats_hist_send_as_json_array(httpd_req_t *req)
+esp_err_t bms_stats_hist_send_latest(httpd_req_t *req)
 {
     httpd_resp_set_type(req, "application/json");
 
-    if (!s_history_buffer.items) {
-        httpd_resp_send_chunk(req, "[]", 2);
-        return httpd_resp_send_chunk(req, NULL, 0);
-    }
+    char tmp[BMS_STATS_JSON_MAXLEN];
+    uint16_t tmplen;
+    bool has;
 
-    if (httpd_resp_send_chunk(req, "[", 1) != ESP_OK) return ESP_FAIL;
-
-    uint16_t head, count;
-    taskENTER_CRITICAL(&s_history_buffer.lock);
-    head  = s_history_buffer.head;
-    count = s_history_buffer.count;
-    taskEXIT_CRITICAL(&s_history_buffer.lock);
-
-    uint16_t start = (uint16_t)((head + s_history_buffer.capacity - count) % s_history_buffer.capacity);
-
-    for (uint16_t i = 0; i < count; i++) {
-        uint16_t idx = (uint16_t)((start + i) % s_history_buffer.capacity);
-
-        if (i != 0) {
-            if (httpd_resp_send_chunk(req, ",", 1) != ESP_OK) {
-                httpd_resp_send_chunk(req, NULL, 0);
-                return ESP_FAIL;
-            }
-        }
-
-        char tmp[BMS_STATS_JSON_MAXLEN];
-        uint16_t tmplen;
-
-        taskENTER_CRITICAL(&s_history_buffer.lock);
-        tmplen = s_history_buffer.items[idx].len;
+    taskENTER_CRITICAL(&s_lock);
+    has    = s_has_sample;
+    tmplen = s_latest_len;
+    if (has && tmplen > 0) {
         if (tmplen >= BMS_STATS_JSON_MAXLEN) tmplen = BMS_STATS_JSON_MAXLEN - 1;
-        if (tmplen > 0) memcpy(tmp, s_history_buffer.items[idx].json, tmplen);
-        tmp[tmplen] = '\0';
-        taskEXIT_CRITICAL(&s_history_buffer.lock);
+        memcpy(tmp, s_latest_json, tmplen);
+    }
+    tmp[tmplen] = '\0';
+    taskEXIT_CRITICAL(&s_lock);
 
-        if (tmplen > 0) {
-            if (httpd_resp_send_chunk(req, tmp, tmplen) != ESP_OK) {
-                httpd_resp_send_chunk(req, NULL, 0);
-                return ESP_FAIL;
-            }
-        }
+    if (!has || tmplen == 0) {
+        return httpd_resp_sendstr(req, "null");
     }
 
-    if (httpd_resp_send_chunk(req, "]", 1) != ESP_OK) {
-        httpd_resp_send_chunk(req, NULL, 0);
-        return ESP_FAIL;
-    }
-
-    return httpd_resp_send_chunk(req, NULL, 0);
+    return httpd_resp_send(req, tmp, tmplen);
 }

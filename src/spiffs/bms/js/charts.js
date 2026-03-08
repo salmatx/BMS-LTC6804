@@ -7,6 +7,12 @@ let iChart = null;
 /// Runtime configuration (fetched once at startup)
 let bmsCfg = { num_cells: 5, current_enable: true };
 
+/// Client-side history buffer (circular array, max 60 seconds of data)
+const HISTORY_MAX_SEC = 60;
+const HISTORY_POLL_MS = 1000;
+const HISTORY_CAPACITY = Math.ceil((HISTORY_MAX_SEC * 1000) / HISTORY_POLL_MS);
+let history = [];
+
 /// Helper – create a Chart.js dataset descriptor.
 function ds(label, data, color) {
   const o = { label, data, borderWidth: 1.5, pointRadius: 0 };
@@ -22,13 +28,13 @@ const MAX_COLOR = "rgba(75,192,192,1)";
 // ── Pack-level voltage ──────────────────────────────────────────────
 
 /// Build data object for the pack voltage chart.
-function buildPackVoltage(history) {
+function buildPackVoltage(hist) {
   return {
-    labels: history.map(s => s.timestamp),
+    labels: hist.map(s => s.timestamp),
     datasets: [
-      ds("avg", history.map(s => s.pack_v_avg), AVG_COLOR),
-      ds("min", history.map(s => s.pack_v_min), MIN_COLOR),
-      ds("max", history.map(s => s.pack_v_max), MAX_COLOR),
+      ds("avg", hist.map(s => s.pack_v_avg), AVG_COLOR),
+      ds("min", hist.map(s => s.pack_v_min), MIN_COLOR),
+      ds("max", hist.map(s => s.pack_v_max), MAX_COLOR),
     ]
   };
 }
@@ -36,13 +42,13 @@ function buildPackVoltage(history) {
 // ── Per-cell voltage ────────────────────────────────────────────────
 
 /// Build data object for one cell chart.
-function buildCellVoltage(history, idx) {
+function buildCellVoltage(hist, idx) {
   return {
-    labels: history.map(s => s.timestamp),
+    labels: hist.map(s => s.timestamp),
     datasets: [
-      ds("avg", history.map(s => s.cell_v_avg[idx]), AVG_COLOR),
-      ds("min", history.map(s => s.cell_v_min[idx]), MIN_COLOR),
-      ds("max", history.map(s => s.cell_v_max[idx]), MAX_COLOR),
+      ds("avg", hist.map(s => s.cell_v_avg[idx]), AVG_COLOR),
+      ds("min", hist.map(s => s.cell_v_min[idx]), MIN_COLOR),
+      ds("max", hist.map(s => s.cell_v_max[idx]), MAX_COLOR),
     ]
   };
 }
@@ -50,13 +56,13 @@ function buildCellVoltage(history, idx) {
 // ── Current ─────────────────────────────────────────────────────────
 
 /// Build data object for the current chart.
-function buildCurrent(history) {
+function buildCurrent(hist) {
   return {
-    labels: history.map(s => s.timestamp),
+    labels: hist.map(s => s.timestamp),
     datasets: [
-      ds("avg", history.map(s => s.pack_i_avg), AVG_COLOR),
-      ds("min", history.map(s => s.pack_i_min), MIN_COLOR),
-      ds("max", history.map(s => s.pack_i_max), MAX_COLOR),
+      ds("avg", hist.map(s => s.pack_i_avg), AVG_COLOR),
+      ds("min", hist.map(s => s.pack_i_min), MIN_COLOR),
+      ds("max", hist.map(s => s.pack_i_max), MAX_COLOR),
     ]
   };
 }
@@ -150,15 +156,25 @@ const CHART_OPTS = {
 
 // ── Refresh loop ────────────────────────────────────────────────────
 
-/// Fetch latest history and update all charts.
+/// Fetch the latest single sample and append it to the client-side history buffer.
+/// Then update all charts from the local history.
 async function refresh() {
-  let history;
+  let sample;
   try {
     const r = await fetch("/bms/stats/data");
-    history = await r.json();
+    sample = await r.json();
   } catch (e) {
     console.error("Stats fetch failed", e);
     return;
+  }
+
+  // Append valid sample to client-side history buffer
+  if (sample !== null && typeof sample === "object") {
+    history.push(sample);
+    // Trim history to keep only the last HISTORY_CAPACITY entries
+    if (history.length > HISTORY_CAPACITY) {
+      history = history.slice(history.length - HISTORY_CAPACITY);
+    }
   }
 
   // Data-points indicator
@@ -226,7 +242,7 @@ async function init() {
 
   buildCellUI();
   refresh();
-  setInterval(refresh, 5000);
+  setInterval(refresh, HISTORY_POLL_MS);
 }
 
 init();

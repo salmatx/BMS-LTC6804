@@ -268,7 +268,7 @@ static app_state_t state_processing_handler(void)
                 // Continue processing - don't block on publish failures with QoS 0
             }
 
-            // Store in history regardless of MQTT success (for local web interface)
+            // Store latest sample for HTTP stats endpoint (browser caches history)
             bms_stats_hist_push(json_buf, (size_t)len);
 
             // Log published stats

@@ -64,7 +64,7 @@ bool initialization_exec(void)
     // Initialize telemetry module (caches device ID and SW version)
     telemetry_init();
 
-    // Allocate statistics history buffer on heap
+    // Initialize latest-sample store for HTTP stats endpoint
     err = bms_stats_hist_init();
     if (err != ESP_OK) {
         BMS_LOGE("Stats history init failed: %s", esp_err_to_name(err));
@@ -112,7 +112,7 @@ bool initialization_exec(void)
     }
 
     // Select and initialize BMS adapter
-    err = bms_demo_adapter_select();
+    err = bms_ltc6804_adapter_select();
     if (err != ESP_OK) {
         BMS_LOGE("BMS adapter init failed: %s", esp_err_to_name(err));
         return false;

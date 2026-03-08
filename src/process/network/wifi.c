@@ -148,7 +148,8 @@ esp_err_t bms_wifi_init(void)
     wifi_config_t wifi_cfg = { 0 };
     snprintf((char *)wifi_cfg.sta.ssid, sizeof(wifi_cfg.sta.ssid), "%s", g_cfg.wifi.ssid);
     snprintf((char *)wifi_cfg.sta.password, sizeof(wifi_cfg.sta.password), "%s", g_cfg.wifi.pass);
-    wifi_cfg.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
+    // Use open auth mode when no password is configured
+    wifi_cfg.sta.threshold.authmode = (g_cfg.wifi.pass[0] == '\0') ? WIFI_AUTH_OPEN : WIFI_AUTH_WPA2_PSK;
 
     // Set WiFi mode to station and apply configuration
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));

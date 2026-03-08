@@ -28,6 +28,9 @@
       <div class="form-group">
         <label for="wifi_pass">Password: <span class="hint">(leave empty to keep current)</span></label>
         <input type="password" id="wifi_pass" name="wifi_pass" maxlength="63" placeholder="••••••••">
+        <label style="margin-top:6px;cursor:pointer;font-size:0.95em;">
+          <input type="checkbox" id="wifi_no_pass" name="wifi_no_pass" value="1" style="width:auto;margin-right:4px;" onchange="toggleNoPass(this.checked)">No password (open network)
+        </label>
       </div>
       
       <h3>Network Configuration <span class="hint">(leave Static IP empty for DHCP)</span></h3>
@@ -161,6 +164,18 @@
     var BATT_FIELDS = ['cell_v_min', 'cell_v_max', 'pack_v_min', 'pack_v_max', 'current_min', 'current_max'];
     var customMode = false;
 
+    function toggleNoPass(checked) {
+      var passInput = document.getElementById('wifi_pass');
+      if (checked) {
+        passInput.value = '';
+        passInput.disabled = true;
+        passInput.placeholder = '(no password)';
+      } else {
+        passInput.disabled = false;
+        passInput.placeholder = '(unchanged)';
+      }
+    }
+
     function fmt2(x) {
       if (x === undefined || x === null || x === '') return '';
       return Number(x).toFixed(2);
@@ -280,6 +295,10 @@
 
           document.getElementById('wifi_ssid').value = data.wifi.ssid || '';
           document.getElementById('wifi_pass').placeholder = '(unchanged)';
+          if (data.wifi.no_pass) {
+            document.getElementById('wifi_no_pass').checked = true;
+            toggleNoPass(true);
+          }
           document.getElementById('wifi_static_ip').value = data.wifi.static_ip || '';
           document.getElementById('wifi_gateway').value = data.wifi.gateway || '';
           document.getElementById('wifi_netmask').value = data.wifi.netmask || '';
