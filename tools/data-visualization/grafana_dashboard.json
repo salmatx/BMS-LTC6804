@@ -1,0 +1,963 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_BMS-MQTT",
+      "label": "bms-mqtt",
+      "description": "",
+      "type": "datasource",
+      "pluginId": "influxdb",
+      "pluginName": "InfluxDB"
+    }
+  ],
+  "__elements": {},
+  "__requires": [
+    {
+      "type": "panel",
+      "id": "bargauge",
+      "name": "Bar gauge",
+      "version": ""
+    },
+    {
+      "type": "grafana",
+      "id": "grafana",
+      "name": "Grafana",
+      "version": "12.4.1"
+    },
+    {
+      "type": "datasource",
+      "id": "influxdb",
+      "name": "InfluxDB",
+      "version": "1.0.0"
+    },
+    {
+      "type": "panel",
+      "id": "table",
+      "name": "Table",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "timeseries",
+      "name": "Time series",
+      "version": ""
+    }
+  ],
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "links": [],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 5,
+      "panels": [],
+      "title": "Configuration",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${DS_BMS-MQTT}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed"
+          },
+          "custom": {
+            "align": "left",
+            "cellOptions": {
+              "dynamicHeight": false,
+              "type": "markdown"
+            },
+            "footer": {
+              "reducers": []
+            },
+            "inspect": false,
+            "wrapHeaderText": false,
+            "wrapText": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 1
+      },
+      "id": 3,
+      "options": {
+        "cellHeight": "sm",
+        "frameIndex": 0,
+        "showHeader": true
+      },
+      "pluginVersion": "12.4.1",
+      "targets": [
+        {
+          "query": "from(bucket: \"bms\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"mqtt_consumer\")\n  |> filter(fn: (r) =>\n      r[\"_field\"] == \"config_cell_v_min\" or\n      r[\"_field\"] == \"config_cell_v_max\" or\n      r[\"_field\"] == \"config_current_min\" or\n      r[\"_field\"] == \"config_current_max\"\n  )\n  |> last()\n  |> map(fn: (r) => ({\n      \"1 Parameter\": if r._field == \"config_cell_v_min\"  then \"Cell Voltage Min (V)\"\n            else if r._field == \"config_cell_v_max\"  then \"Cell Voltage Max (V)\"\n            else if r._field == \"config_current_min\" then \"Cell Current Min (A)\"\n            else \"Cell Current Max (A)\",\n      \"2 Value\": r._value\n  }))\n  |> keep(columns: [\"1 Parameter\", \"2 Value\"])\n",
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${DS_BMS-MQTT}"
+          }
+        }
+      ],
+      "title": "Battery configuration",
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {},
+            "includeByName": {},
+            "indexByName": {},
+            "orderBy": [
+              {
+                "desc": false,
+                "type": "name"
+              }
+            ],
+            "orderByMode": "auto",
+            "renameByName": {
+              "1 Parameter": "Parameter",
+              "2 Value": "Value"
+            }
+          }
+        }
+      ],
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${DS_BMS-MQTT}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "footer": {
+              "reducers": []
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 1
+      },
+      "id": 11,
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true
+      },
+      "pluginVersion": "12.4.1",
+      "targets": [
+        {
+          "query": "mainRow = from(bucket: \"bms\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"mqtt_consumer\")\n  |> filter(fn: (r) => r[\"_field\"] == \"pack_v_avg\")\n  |> last()\n  |> map(fn: (r) => ({\n      \"1 Parameter\": \"Device ID\",\n      \"2 Value\":     r[\"device_id\"]\n  }))\n  |> keep(columns: [\"1 Parameter\", \"2 Value\"])\n\nresetRow = from(bucket: \"bms\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"mqtt_consumer\")\n  |> filter(fn: (r) => r[\"_field\"] == \"telemetry_reset_reason\")\n  |> last()\n  |> map(fn: (r) => ({\n      \"1 Parameter\": \"Reset Reason\",\n      \"2 Value\":\n            if int(v: r._value) == 0  then \"Unknown\"\n       else if int(v: r._value) == 1  then \"Power-on reset\"\n       else if int(v: r._value) == 2  then \"External pin reset\"\n       else if int(v: r._value) == 3  then \"Software reset\"\n       else if int(v: r._value) == 4  then \"Exception / panic\"\n       else if int(v: r._value) == 5  then \"Interrupt watchdog\"\n       else if int(v: r._value) == 6  then \"Task watchdog\"\n       else if int(v: r._value) == 7  then \"Other watchdog\"\n       else if int(v: r._value) == 8  then \"Deep sleep exit\"\n       else if int(v: r._value) == 9  then \"Brownout\"\n       else if int(v: r._value) == 10 then \"SDIO reset\"\n       else \"Unknown (\" + string(v: int(v: r._value)) + \")\"\n  }))\n  |> keep(columns: [\"1 Parameter\", \"2 Value\"])\n\ntelemetryRows = from(bucket: \"bms\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"mqtt_consumer\")\n  |> filter(fn: (r) =>\n      r[\"_field\"] == \"telemetry_sw_version\"     or\n      r[\"_field\"] == \"telemetry_cpu_load\"       or\n      r[\"_field\"] == \"telemetry_free_heap\"      or\n      r[\"_field\"] == \"telemetry_min_heap\"       or\n      r[\"_field\"] == \"telemetry_ltc_soc\"        or\n      r[\"_field\"] == \"telemetry_ltc_itmp\"       or\n      r[\"_field\"] == \"telemetry_ltc_va\"         or\n      r[\"_field\"] == \"telemetry_ltc_vd\"         or\n      r[\"_field\"] == \"telemetry_ltc_cell_flags\" or\n      r[\"_field\"] == \"telemetry_ltc_diag\"\n  )\n  |> last()\n  |> map(fn: (r) => ({\n      \"1 Parameter\": if r._field == \"telemetry_sw_version\"     then \"SW Version\"\n            else if r._field == \"telemetry_cpu_load\"           then \"CPU Load (%)\"\n            else if r._field == \"telemetry_free_heap\"          then \"Free Heap (B)\"\n            else if r._field == \"telemetry_min_heap\"           then \"Min Free Heap (B)\"\n            else if r._field == \"telemetry_ltc_soc\"            then \"LTC SOC\"\n            else if r._field == \"telemetry_ltc_itmp\"           then \"LTC Temp (raw)\"\n            else if r._field == \"telemetry_ltc_va\"             then \"LTC Va (mV)\"\n            else if r._field == \"telemetry_ltc_vd\"             then \"LTC Vd (mV)\"\n            else if r._field == \"telemetry_ltc_cell_flags\"     then \"LTC Cell Flags\"\n            else                                                    \"LTC Diag\",\n      \"2 Value\": string(v: r._value)\n  }))\n  |> keep(columns: [\"1 Parameter\", \"2 Value\"])\n\nunion(tables: [mainRow, resetRow, telemetryRows])\n  |> sort(columns: [\"1 Parameter\"])\n",
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${DS_BMS-MQTT}"
+          }
+        }
+      ],
+      "title": "Diagnostic parameters",
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {},
+            "includeByName": {},
+            "indexByName": {},
+            "orderBy": [
+              {
+                "desc": false,
+                "type": "name"
+              }
+            ],
+            "orderByMode": "auto",
+            "renameByName": {
+              "1 Parameter": "Parameter",
+              "2 Value": "Value"
+            }
+          }
+        }
+      ],
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${DS_BMS-MQTT}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "footer": {
+              "reducers": []
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 9
+      },
+      "id": 12,
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true,
+        "sortBy": []
+      },
+      "pluginVersion": "12.4.1",
+      "targets": [
+        {
+          "query": "from(bucket: \"bms\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"mqtt_consumer\")\n  |> filter(fn: (r) =>\n      r[\"_field\"] == \"telemetry_ltc_soc\"        or\n      r[\"_field\"] == \"telemetry_ltc_itmp\"       or\n      r[\"_field\"] == \"telemetry_ltc_va\"         or\n      r[\"_field\"] == \"telemetry_ltc_vd\"         or\n      r[\"_field\"] == \"telemetry_ltc_cell_flags\" or\n      r[\"_field\"] == \"telemetry_ltc_diag\"       or\n      r[\"_field\"] == \"telemetry_reset_reason\"\n  )\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> keep(columns: [\n      \"_time\",\n      \"telemetry_ltc_soc\",\n      \"telemetry_ltc_itmp\",\n      \"telemetry_ltc_va\",\n      \"telemetry_ltc_vd\",\n      \"telemetry_ltc_cell_flags\",\n      \"telemetry_ltc_diag\",\n      \"telemetry_reset_reason\"\n  ])\n  |> sort(columns: [\"_time\"], desc: false)\n",
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${DS_BMS-MQTT}"
+          }
+        }
+      ],
+      "title": "Raw telemetry data",
+      "type": "table"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 17
+      },
+      "id": 4,
+      "panels": [],
+      "title": "Actual data",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${DS_BMS-MQTT}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed"
+          },
+          "fieldMinMax": false,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          },
+          "unit": "volt"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 18
+      },
+      "id": 1,
+      "options": {
+        "displayMode": "gradient",
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "maxVizHeight": 300,
+        "minVizHeight": 16,
+        "minVizWidth": 8,
+        "namePlacement": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/^_value$/",
+          "values": true
+        },
+        "showUnfilled": true,
+        "sizing": "auto",
+        "valueMode": "text"
+      },
+      "pluginVersion": "12.4.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${DS_BMS-MQTT}"
+          },
+          "query": "from(bucket: \"bms\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"mqtt_consumer\")\n  |> filter(fn: (r) => r[\"_field\"] =~ /^cell_v_avg_\\d+$/)\n  |> last()\n  |> group()\n  |> map(fn: (r) => ({\n      _time:  r._time,\n      _field: if r._field == \"cell_v_avg_0\"  then \"Cell 0\"\n         else if r._field == \"cell_v_avg_1\"  then \"Cell 1\"\n         else if r._field == \"cell_v_avg_2\"  then \"Cell 2\"\n         else if r._field == \"cell_v_avg_3\"  then \"Cell 3\"\n         else if r._field == \"cell_v_avg_4\"  then \"Cell 4\"\n         else if r._field == \"cell_v_avg_5\"  then \"Cell 5\"\n         else if r._field == \"cell_v_avg_6\"  then \"Cell 6\"\n         else if r._field == \"cell_v_avg_7\"  then \"Cell 7\"\n         else if r._field == \"cell_v_avg_8\"  then \"Cell 8\"\n         else if r._field == \"cell_v_avg_9\"  then \"Cell 9\"\n         else if r._field == \"cell_v_avg_10\" then \"Cell 10\"\n         else \"Cell 11\",\n      _value: r._value\n  }))\n",
+          "refId": "A"
+        }
+      ],
+      "title": "Actual Cell Voltage",
+      "transformations": [
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "cell_v_avg_(\\d+)(.)*",
+            "renamePattern": "Cell $1"
+          }
+        }
+      ],
+      "type": "bargauge"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${DS_BMS-MQTT}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed"
+          },
+          "mappings": [
+            {
+              "options": {
+                "0": {
+                  "color": "dark-green",
+                  "index": 0,
+                  "text": "In limit"
+                },
+                "1": {
+                  "color": "dark-blue",
+                  "index": 1,
+                  "text": "Below limit"
+                },
+                "2": {
+                  "color": "dark-red",
+                  "index": 2,
+                  "text": "Above limit"
+                }
+              },
+              "type": "value"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 18
+      },
+      "id": 2,
+      "options": {
+        "displayMode": "gradient",
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "maxVizHeight": 300,
+        "minVizHeight": 16,
+        "minVizWidth": 8,
+        "namePlacement": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true,
+        "sizing": "auto",
+        "valueMode": "color"
+      },
+      "pluginVersion": "12.4.1",
+      "targets": [
+        {
+          "query": "from(bucket: \"bms\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"mqtt_consumer\")\n  |> filter(fn: (r) => r[\"_field\"] == \"cell_errors\")\n  |> last()\n  |> map(fn: (r) => {\n      e       = uint(v: int(v: r._value))\n      b0      = uint(v: 0)\n      b2      = uint(v: 2)\n      b4      = uint(v: 4)\n      u1      = uint(v: 1)\n      u2      = uint(v: 2)\n      u3      = uint(v: 3)\n\n      shifted = e / b2\n\n      c0  = (shifted / uint(v: 1))       % b4\n      c1  = (shifted / uint(v: 4))       % b4\n      c2  = (shifted / uint(v: 16))      % b4\n      c3  = (shifted / uint(v: 64))      % b4\n      c4  = (shifted / uint(v: 256))     % b4\n      c5  = (shifted / uint(v: 1024))    % b4\n      c6  = (shifted / uint(v: 4096))    % b4\n      c7  = (shifted / uint(v: 16384))   % b4\n      c8  = (shifted / uint(v: 65536))   % b4\n      c9  = (shifted / uint(v: 262144))  % b4\n      c10 = (shifted / uint(v: 1048576)) % b4\n      c11 = (shifted / uint(v: 4194304)) % b4\n\n      pack_uc = (e / uint(v: 33554432)) % b2\n      pack_oc = (e / uint(v: 67108864)) % b2\n\n      // Return wide row — one column per cell/error\n      return {\n        _time:             r._time,\n        \"Cell 0 Voltage\":  if c0  == u1 then 1.0 else if c0  == u2 then 2.0 else if c0  == u3 then 3.0 else 0.0,\n        \"Cell 1 Voltage\":  if c1  == u1 then 1.0 else if c1  == u2 then 2.0 else if c1  == u3 then 3.0 else 0.0,\n        \"Cell 2 Voltage\":  if c2  == u1 then 1.0 else if c2  == u2 then 2.0 else if c2  == u3 then 3.0 else 0.0,\n        \"Cell 3 Voltage\":  if c3  == u1 then 1.0 else if c3  == u2 then 2.0 else if c3  == u3 then 3.0 else 0.0,\n        \"Cell 4 Voltage\":  if c4  == u1 then 1.0 else if c4  == u2 then 2.0 else if c4  == u3 then 3.0 else 0.0,\n        \"Cell 5 Voltage\":  if c5  == u1 then 1.0 else if c5  == u2 then 2.0 else if c5  == u3 then 3.0 else 0.0,\n        \"Cell 6 Voltage\":  if c6  == u1 then 1.0 else if c6  == u2 then 2.0 else if c6  == u3 then 3.0 else 0.0,\n        \"Cell 7 Voltage\":  if c7  == u1 then 1.0 else if c7  == u2 then 2.0 else if c7  == u3 then 3.0 else 0.0,\n        \"Cell 8 Voltage\":  if c8  == u1 then 1.0 else if c8  == u2 then 2.0 else if c8  == u3 then 3.0 else 0.0,\n        \"Cell 9 Voltage\":  if c9  == u1 then 1.0 else if c9  == u2 then 2.0 else if c9  == u3 then 3.0 else 0.0,\n        \"Cell 10 Voltage\": if c10 == u1 then 1.0 else if c10 == u2 then 2.0 else if c10 == u3 then 3.0 else 0.0,\n        \"Cell 11 Voltage\": if c11 == u1 then 1.0 else if c11 == u2 then 2.0 else if c11 == u3 then 3.0 else 0.0,\n        \"Pack Current\":    if pack_uc == u1 then 1.0 else if pack_oc == u1 then 2.0 else 0.0\n      }\n  })\n",
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${DS_BMS-MQTT}"
+          }
+        }
+      ],
+      "title": "Errors",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${DS_BMS-MQTT}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 26
+      },
+      "id": 6,
+      "options": {
+        "displayMode": "gradient",
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "maxVizHeight": 300,
+        "minVizHeight": 16,
+        "minVizWidth": 8,
+        "namePlacement": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true,
+        "sizing": "auto",
+        "valueMode": "color"
+      },
+      "pluginVersion": "12.4.1",
+      "targets": [
+        {
+          "query": "from(bucket: \"bms\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"mqtt_consumer\")\n  |> filter(fn: (r) =>\n      r[\"_field\"] == \"pack_v_avg\" or\n      r[\"_field\"] == \"pack_i_avg\"\n  )\n  |> last()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> map(fn: (r) => ({\n      _time:          r._time,\n      \"1 Pack Voltage\": r.pack_v_avg,\n      \"2 Pack Current\": r.pack_i_avg,\n      \"3 Power\":        r.pack_v_avg * r.pack_i_avg\n  }))\n  |> keep(columns: [\"_time\", \"1 Pack Voltage\", \"2 Pack Current\", \"3 Power\"])\n",
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${DS_BMS-MQTT}"
+          }
+        }
+      ],
+      "title": "Pack parameters",
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {},
+            "includeByName": {},
+            "indexByName": {},
+            "orderBy": [
+              {
+                "desc": false,
+                "type": "name"
+              }
+            ],
+            "orderByMode": "auto",
+            "renameByName": {
+              "1 Pack Voltage": "Pack Voltage (V)",
+              "2 Pack Current": "Pack Current (A)",
+              "3 Power": "Power (W)"
+            }
+          }
+        }
+      ],
+      "type": "bargauge"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 34
+      },
+      "id": 8,
+      "panels": [],
+      "title": "Data history",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${DS_BMS-MQTT}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "Voltage (V)",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "showValues": false,
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 35
+      },
+      "id": 7,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "12.4.1",
+      "targets": [
+        {
+          "query": "from(bucket: \"bms\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"mqtt_consumer\")\n  |> filter(fn: (r) => r._field =~ /^cell_v_avg_\\d+$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n",
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${DS_BMS-MQTT}"
+          }
+        }
+      ],
+      "title": "Cell Voltage",
+      "transformations": [
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "cell_v_avg_(\\d+)(.)*",
+            "renamePattern": "Cell $1"
+          }
+        }
+      ],
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${DS_BMS-MQTT}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "showValues": false,
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Pack Voltage"
+            },
+            "properties": [
+              {
+                "id": "custom.axisPlacement",
+                "value": "left"
+              },
+              {
+                "id": "custom.axisLabel",
+                "value": "Voltage (V)"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Pack Current"
+            },
+            "properties": [
+              {
+                "id": "custom.axisPlacement",
+                "value": "left"
+              },
+              {
+                "id": "custom.axisLabel",
+                "value": "Current (A)"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Pack Power"
+            },
+            "properties": [
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.axisLabel",
+                "value": "Power (W)"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 35
+      },
+      "id": 10,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "12.4.1",
+      "targets": [
+        {
+          "query": "from(bucket: \"bms\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"mqtt_consumer\")\n  |> filter(fn: (r) =>\n      r[\"_field\"] == \"pack_v_avg\" or\n      r[\"_field\"] == \"pack_i_avg\"\n  )\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> map(fn: (r) => ({\n      _time:          r._time,\n      \"Pack Voltage\": r.pack_v_avg,\n      \"Pack Current\": r.pack_i_avg,\n      \"Pack Power\":   r.pack_v_avg * r.pack_i_avg\n  }))\n  |> keep(columns: [\"_time\", \"Pack Voltage\", \"Pack Current\", \"Pack Power\"])\n",
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${DS_BMS-MQTT}"
+          }
+        }
+      ],
+      "title": "Pack parametes",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${DS_BMS-MQTT}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "log": 2,
+              "type": "symlog"
+            },
+            "showPoints": "auto",
+            "showValues": false,
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [
+            {
+              "options": {
+                "0": {
+                  "color": "dark-green",
+                  "index": 2,
+                  "text": "In limit"
+                },
+                "1": {
+                  "color": "dark-blue",
+                  "index": 0,
+                  "text": "Below limit"
+                },
+                "2": {
+                  "color": "dark-red",
+                  "index": 1,
+                  "text": "Above limit"
+                }
+              },
+              "type": "value"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 43
+      },
+      "id": 9,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "12.4.1",
+      "targets": [
+        {
+          "query": "from(bucket: \"bms\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"mqtt_consumer\")\n  |> filter(fn: (r) => r[\"_field\"] == \"cell_errors\")\n  |> aggregateWindow(every: v.windowPeriod, fn: max, createEmpty: false)\n  |> map(fn: (r) => {\n      e       = uint(v: int(v: r._value))\n      b2      = uint(v: 2)\n      b4      = uint(v: 4)\n      u1      = uint(v: 1)\n      u2      = uint(v: 2)\n      u3      = uint(v: 3)\n\n      shifted = e / b2\n\n      c0  = (shifted / uint(v: 1))       % b4\n      c1  = (shifted / uint(v: 4))       % b4\n      c2  = (shifted / uint(v: 16))      % b4\n      c3  = (shifted / uint(v: 64))      % b4\n      c4  = (shifted / uint(v: 256))     % b4\n      c5  = (shifted / uint(v: 1024))    % b4\n      c6  = (shifted / uint(v: 4096))    % b4\n      c7  = (shifted / uint(v: 16384))   % b4\n      c8  = (shifted / uint(v: 65536))   % b4\n      c9  = (shifted / uint(v: 262144))  % b4\n      c10 = (shifted / uint(v: 1048576)) % b4\n      c11 = (shifted / uint(v: 4194304)) % b4\n\n      pack_uc = (e / uint(v: 33554432)) % b2\n      pack_oc = (e / uint(v: 67108864)) % b2\n\n      return {\n        _time:          r._time,\n        \"Cell 0\":       if c0  == u1 then 1.0 else if c0  == u2 then 2.0 else if c0  == u3 then 3.0 else 0.0,\n        \"Cell 1\":       if c1  == u1 then 1.0 else if c1  == u2 then 2.0 else if c1  == u3 then 3.0 else 0.0,\n        \"Cell 2\":       if c2  == u1 then 1.0 else if c2  == u2 then 2.0 else if c2  == u3 then 3.0 else 0.0,\n        \"Cell 3\":       if c3  == u1 then 1.0 else if c3  == u2 then 2.0 else if c3  == u3 then 3.0 else 0.0,\n        \"Cell 4\":       if c4  == u1 then 1.0 else if c4  == u2 then 2.0 else if c4  == u3 then 3.0 else 0.0,\n        \"Cell 5\":       if c5  == u1 then 1.0 else if c5  == u2 then 2.0 else if c5  == u3 then 3.0 else 0.0,\n        \"Cell 6\":       if c6  == u1 then 1.0 else if c6  == u2 then 2.0 else if c6  == u3 then 3.0 else 0.0,\n        \"Cell 7\":       if c7  == u1 then 1.0 else if c7  == u2 then 2.0 else if c7  == u3 then 3.0 else 0.0,\n        \"Cell 8\":       if c8  == u1 then 1.0 else if c8  == u2 then 2.0 else if c8  == u3 then 3.0 else 0.0,\n        \"Cell 9\":       if c9  == u1 then 1.0 else if c9  == u2 then 2.0 else if c9  == u3 then 3.0 else 0.0,\n        \"Cell 10\":      if c10 == u1 then 1.0 else if c10 == u2 then 2.0 else if c10 == u3 then 3.0 else 0.0,\n        \"Cell 11\":      if c11 == u1 then 1.0 else if c11 == u2 then 2.0 else if c11 == u3 then 3.0 else 0.0,\n        \"Pack Current\": if pack_uc == u1 then 1.0 else if pack_oc == u1 then 2.0 else 0.0\n      }\n  })\n",
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${DS_BMS-MQTT}"
+          }
+        }
+      ],
+      "title": "Errors",
+      "type": "timeseries"
+    }
+  ],
+  "preload": false,
+  "refresh": "5s",
+  "schemaVersion": 42,
+  "tags": [],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-1m",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "BMS Data",
+  "uid": "ad445wg",
+  "version": 27,
+  "weekStart": ""
+}

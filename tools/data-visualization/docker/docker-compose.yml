@@ -1,0 +1,62 @@
+services:
+  mosquitto:
+    image: eclipse-mosquitto:latest
+    container_name: mosquitto
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto:/mosquitto
+    networks:
+      - iot
+
+  influxdb:
+    image: influxdb:2
+    container_name: influxdb2
+    restart: unless-stopped
+    ports:
+      - "8086:8086"
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=admin
+      - DOCKER_INFLUXDB_INIT_PASSWORD=bms12345
+      - DOCKER_INFLUXDB_INIT_ORG=bms
+      - DOCKER_INFLUXDB_INIT_BUCKET=bms
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=${INFLUX_TOKEN}
+    volumes:
+      - ./influxdb2-data:/var/lib/influxdb2
+      - ./influxdb2-config:/etc/influxdb2
+    networks:
+      - iot
+
+  telegraf:
+    image: telegraf:latest
+    container_name: telegraf
+    restart: unless-stopped
+    depends_on:
+      - influxdb
+      - mosquitto
+    environment:
+      - INFLUX_TOKEN=${INFLUX_TOKEN}
+    volumes:
+      - ./telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+    networks:
+      - iot
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=bms12345
+    volumes:
+      - ./grafana-data:/var/lib/grafana
+    networks:
+      - iot
+
+networks:
+  iot:
+    driver: bridge
