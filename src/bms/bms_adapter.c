@@ -204,7 +204,7 @@ static esp_err_t demo_read_sample(bms_sample_t *out)
 /// \return ESP_OK on success, otherwise an error code
 static esp_err_t ltc6804_adapter_init(void)
 {
-    esp_err_t ret = ltc6804_init();
+    esp_err_t ret = ltc6804_init(g_cfg.battery.cell_v_min, g_cfg.battery.cell_v_max);
     if (ret != ESP_OK) {
         BMS_LOGE("LTC6804 adapter init failed: %s", esp_err_to_name(ret));
         return ret;
@@ -238,9 +238,15 @@ static esp_err_t ltc6804_adapter_read_sample(bms_sample_t *out)
     }
     out->pack_v = pack_v;
 
-    // Pack current: LTC6804 does not measure current — set to 0.
-    // If current measurement is needed, it should be handled by a separate sensor module.
-    out->pack_i = 0.0f;
+    // Read pack current from current sensor connected to LTC6804 GPIO pin
+    if (g_cfg.battery.current_enable) {
+        ret = ltc6804_read_current(&out->pack_i);
+        if (ret != ESP_OK) {
+            out->pack_i = 0.0f;
+        }
+    } else {
+        out->pack_i = 0.0f;
+    }
 
     // Set timestamp
     out->timestamp = xTaskGetTickCount();

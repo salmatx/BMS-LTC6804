@@ -80,11 +80,11 @@ int bms_stats_to_json(const bms_stats_t *st, char *buf, size_t buf_size)
 
     // Opening brace + device ID + timestamp
     JSON_APPEND(off, buf, buf_size,
-        "{\"device_id\":\"%s\",\"timestamp\":%u,\"sample_count\":%u,\"cell_errors\":%u,",
+        "{\"device_id\":\"%s\",\"timestamp\":%u,\"sample_count\":%u,\"cell_errors\":%lu,",
         device_id,
         (unsigned)st->timestamp,
         (unsigned)st->sample_count,
-        (unsigned)st->cell_errors);
+        (unsigned long)st->cell_errors);
     
     // cell_v_avg array
     JSON_APPEND(off, buf, buf_size, "\"cell_v_avg\":[");
@@ -93,31 +93,28 @@ int bms_stats_to_json(const bms_stats_t *st, char *buf, size_t buf_size)
     }
     JSON_APPEND(off, buf, buf_size, "],");
 
-    // cell_v_min array
-    JSON_APPEND(off, buf, buf_size, "\"cell_v_min\":[");
-    for (int i = 0; i < nc; ++i) {
-        JSON_APPEND(off, buf, buf_size, "%s%.3f", i ? "," : "", st->cell_v_min[i]);
-    }
-    JSON_APPEND(off, buf, buf_size, "],");
-
-    // cell_v_max array
-    JSON_APPEND(off, buf, buf_size, "\"cell_v_max\":[");
-    for (int i = 0; i < nc; ++i) {
-        JSON_APPEND(off, buf, buf_size, "%s%.3f", i ? "," : "", st->cell_v_max[i]);
-    }
-    JSON_APPEND(off, buf, buf_size, "],");
-
-    // Pack voltage fields
+    // Pack voltage average
     JSON_APPEND(off, buf, buf_size,
-        "\"pack_v_avg\":%.3f,\"pack_v_min\":%.3f,\"pack_v_max\":%.3f",
-        st->pack_v_avg, st->pack_v_min, st->pack_v_max);
+        "\"pack_v_avg\":%.3f",
+        st->pack_v_avg);
 
-    // Pack current fields (only if current measurement is enabled)
+    // Pack current average (only if current measurement is enabled)
     if (g_cfg.battery.current_enable) {
         JSON_APPEND(off, buf, buf_size,
-            ",\"pack_i_avg\":%.3f,\"pack_i_min\":%.3f,\"pack_i_max\":%.3f",
-            st->pack_i_avg, st->pack_i_min, st->pack_i_max);
+            ",\"pack_i_avg\":%.3f",
+            st->pack_i_avg);
     }
+
+    // Configuration limit values in separate config object
+    JSON_APPEND(off, buf, buf_size,
+        ",\"config\":{\"cell_v_min\":%.3f,\"cell_v_max\":%.3f",
+        g_cfg.battery.cell_v_min, g_cfg.battery.cell_v_max);
+    if (g_cfg.battery.current_enable) {
+        JSON_APPEND(off, buf, buf_size,
+            ",\"current_min\":%.3f,\"current_max\":%.3f",
+            g_cfg.battery.current_min, g_cfg.battery.current_max);
+    }
+    JSON_APPEND(off, buf, buf_size, "}");
 
     // Add telemetry data if this is the 10th message
     if (include_telemetry) {
@@ -129,17 +126,23 @@ int bms_stats_to_json(const bms_stats_t *st, char *buf, size_t buf_size)
         
         JSON_APPEND(off, buf, buf_size,
             ",\"telemetry\":{\"sw_version\":\"%s\",\"cpu_load\":%u,"
-            "\"free_heap\":%u,\"min_heap\":%u",
+            "\"free_heap\":%u,\"min_heap\":%u,\"reset_reason\":%u",
             sw_version,
             (unsigned)esp_telem.cpu_load,
             (unsigned)esp_telem.free_heap,
-            (unsigned)esp_telem.min_free_heap);
+            (unsigned)esp_telem.min_free_heap,
+            (unsigned)esp_telem.reset_reason);
         
         if (ltc_status.valid) {
             JSON_APPEND(off, buf, buf_size,
-                ",\"ltc_status_a\":%u,\"ltc_status_b\":%u",
-                (unsigned)ltc_status.status_a,
-                (unsigned)ltc_status.status_b);
+                ",\"ltc_soc\":%u,\"ltc_itmp\":%u,\"ltc_va\":%u"
+                ",\"ltc_vd\":%u,\"ltc_cell_flags\":%lu,\"ltc_diag\":%u",
+                (unsigned)ltc_status.soc,
+                (unsigned)ltc_status.itmp,
+                (unsigned)ltc_status.va,
+                (unsigned)ltc_status.vd,
+                (unsigned long)ltc_status.cell_flags,
+                (unsigned)ltc_status.diag);
         }
         
         JSON_APPEND(off, buf, buf_size, "}");

@@ -25,25 +25,27 @@ typedef struct {
     size_t     sample_count;                            ///< Number of samples aggregated into this window
 
     float cell_v_avg[BMS_MAX_CELLS];                    ///< Average  per-cell voltages
-    float cell_v_min[BMS_MAX_CELLS];                    ///< Minimum  per-cell voltages
-    float cell_v_max[BMS_MAX_CELLS];                    ///< Maximum  per-cell voltages   
 
     float pack_v_avg;                                   ///< Average  pack voltage
-    float pack_v_min;                                   ///< Minimum  pack voltage
-    float pack_v_max;                                   ///< Maximum  pack voltage
 
     float pack_i_avg;                                   ///< Average  pack current
-    float pack_i_min;                                   ///< Minimum  pack current
-    float pack_i_max;                                   ///< Maximum  pack current
 
-    uint16_t cell_errors;                               ///< Bitmask of limit violations
-                                                        ///< 0x0001 – inspection bit (“valid data” marker) always set
-                                                        ///< 0x0002 - cell 0 undervoltage, 0x0004 - cell 0 overvoltage,
-                                                        ///< 0x0008 - cell 1 undervoltage, 0x0010 - cell 1 overvoltage,
-                                                        ///< 0x0020 - cell 2 undervoltage, 0x0040 - cell 2 overvoltage,
-                                                        ///< 0x0080 - cell 3 undervoltage, 0x0100 - cell 3 overvoltage,
-                                                        ///< 0x0200 - cell 4 undervoltage, 0x0400 - cell 4 overvoltage,
-                                                        ///< 0x0800 - pack undercurrent,   0x1000 - pack overcurrent
+    uint32_t cell_errors;                               ///< Bitmask of limit violations
+                                                        ///< Bit  0:       inspection bit ("valid data" marker) always set
+                                                        ///< Bit  1- 2:    cell  0 undervoltage / overvoltage
+                                                        ///< Bit  3- 4:    cell  1 undervoltage / overvoltage
+                                                        ///< Bit  5- 6:    cell  2 undervoltage / overvoltage
+                                                        ///< Bit  7- 8:    cell  3 undervoltage / overvoltage
+                                                        ///< Bit  9-10:    cell  4 undervoltage / overvoltage
+                                                        ///< Bit 11-12:    cell  5 undervoltage / overvoltage
+                                                        ///< Bit 13-14:    cell  6 undervoltage / overvoltage
+                                                        ///< Bit 15-16:    cell  7 undervoltage / overvoltage
+                                                        ///< Bit 17-18:    cell  8 undervoltage / overvoltage
+                                                        ///< Bit 19-20:    cell  9 undervoltage / overvoltage
+                                                        ///< Bit 21-22:    cell 10 undervoltage / overvoltage
+                                                        ///< Bit 23-24:    cell 11 undervoltage / overvoltage
+                                                        ///< Bit 25:       pack undercurrent
+                                                        ///< Bit 26:       pack overcurrent
 } bms_stats_t;
 
 /// Structure defining buffer for storing multiple statistics windows.

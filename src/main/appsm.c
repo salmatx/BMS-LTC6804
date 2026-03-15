@@ -272,11 +272,11 @@ static app_state_t state_processing_handler(void)
             bms_stats_hist_push(json_buf, (size_t)len);
 
             // Log published stats
-            BMS_LOGI("STAT[%u]: ts=%lu ticks, samples=%u, cell_errors=0x%04X",
+            BMS_LOGI("STAT[%u]: ts=%lu ticks, samples=%u, cell_errors=0x%08lX",
                         (unsigned)i,
                         (unsigned long)st->timestamp,
                         (unsigned)st->sample_count,
-                        (unsigned)st->cell_errors);
+                        (unsigned long)st->cell_errors);
         }
 
         // Consume raw samples immediately after processing (no waiting for ACK)

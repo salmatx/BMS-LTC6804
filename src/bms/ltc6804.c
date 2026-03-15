@@ -46,15 +46,20 @@
 /*                                       Private Function Prototypes                                            */
 /*==============================================================================================================*/
 static uint16_t pec15_calc(uint8_t len, const uint8_t *data);
-static void     set_adc_cmd(uint8_t md, uint8_t dcp, uint8_t ch);
+static void     set_adc_cmd(uint8_t md, uint8_t dcp, uint8_t ch, uint8_t chg);
 static esp_err_t spi_transfer(const uint8_t *tx, uint8_t *rx, size_t len);
 static void     cs_low(void);
 static void     cs_high(void);
 static void     wakeup_idle(void);
 static void     wakeup_sleep(void);
 static esp_err_t ltc6804_adcv(void);
+static esp_err_t ltc6804_adax(void);
+static esp_err_t ltc6804_adstat(void);
 static esp_err_t ltc6804_rdcv(uint16_t cell_codes[LTC6804_MAX_CELLS]);
 static esp_err_t ltc6804_rdcv_reg(uint8_t reg, uint8_t *data);
+static esp_err_t ltc6804_rdaux(uint16_t aux_codes[LTC6804_NUM_GPIO + 1]);
+static esp_err_t ltc6804_rdaux_reg(uint8_t reg, uint8_t *data);
+static esp_err_t ltc6804_rdstat_reg(uint8_t reg, uint8_t *data);
 static esp_err_t ltc6804_wrcfg(const uint8_t cfg[6]);
 static esp_err_t ltc6804_rdcfg(uint8_t r_cfg[8]);
 
@@ -107,6 +112,12 @@ static spi_device_handle_t s_spi_dev = NULL;
 /// Pre-computed ADCV command bytes (set by set_adc_cmd)
 static uint8_t s_adcv_cmd[2];
 
+/// Pre-computed ADAX command bytes (set by set_adc_cmd)
+static uint8_t s_adax_cmd[2];
+
+/// Pre-computed ADSTAT command bytes (set by set_adc_cmd)
+static uint8_t s_adstat_cmd[2];
+
 /*==============================================================================================================*/
 /*                                      Public Variables and Constants                                          */
 /*==============================================================================================================*/
@@ -117,10 +128,13 @@ static uint8_t s_adcv_cmd[2];
 /// This function initializes the SPI bus and configures the LTC6804-2 chip.
 /// Sets up ESP-IDF SPI master on the configured pins, adds the LTC6804 as a device,
 /// configures ADC mode (normal, all channels, discharge disabled), and writes
-/// the default configuration register.
+/// the configuration register with undervoltage/overvoltage thresholds derived
+/// from cell_v_min and cell_v_max.
 ///
+/// \param cell_v_min Minimum per-cell voltage (V) for undervoltage threshold
+/// \param cell_v_max Maximum per-cell voltage (V) for overvoltage threshold
 /// \return ESP_OK on success, otherwise an error code
-esp_err_t ltc6804_init(void)
+esp_err_t ltc6804_init(float cell_v_min, float cell_v_max)
 {
     // Configure CS pin as GPIO output (manual control for isoSPI wakeup timing)
     gpio_config_t cs_cfg = {
@@ -164,46 +178,77 @@ esp_err_t ltc6804_init(void)
         return ret;
     }
 
-    // Set ADC command for normal mode, all cells, discharge disabled
-    set_adc_cmd(LTC6804_MD_NORMAL, LTC6804_DCP_DISABLED, LTC6804_CH_ALL);
+    // Set ADC commands for normal mode, all cells/GPIOs, discharge disabled
+    set_adc_cmd(LTC6804_MD_NORMAL, LTC6804_DCP_DISABLED, LTC6804_CH_ALL, LTC6804_AUX_CH_ALL);
 
-    // Write default configuration register:
+    // Compute 12-bit VUV and VOV register values from voltage thresholds.
+    // Datasheet formulas: Comparison Voltage = (VUV + 1) * 16 * 100µV
+    //                     Comparison Voltage = VOV * 16 * 100µV
+    uint16_t vuv = (uint16_t)(cell_v_min / 0.0016f) - 1;
+    uint16_t vov = (uint16_t)(cell_v_max / 0.0016f);
+    if (vuv > 0xFFF) vuv = 0xFFF;
+    if (vov > 0xFFF) vov = 0xFFF;
+
+    BMS_LOGI("VUV=0x%03X (%.3f V), VOV=0x%03X (%.3f V)",
+             vuv, (vuv + 1) * 0.0016f, vov, vov * 0.0016f);
+
+    // Write configuration register:
     // CFGR0: GPIO pull-downs off, REFON=1 (keep reference powered), ADC mode bits = 0
-    // CFGR1-CFGR3: undervoltage/overvoltage thresholds at 0 (disabled)
+    // CFGR1-CFGR3: undervoltage/overvoltage thresholds from config
     // CFGR4-CFGR5: cell discharge switches all off
     uint8_t cfg[6] = {
-        0xFE,   // CFGR0: GPIO1-5 pull-downs off, REFON=1, ADCOPT=0
-        0x00,   // CFGR1: VUV[7:0]  — undervoltage threshold low byte
-        0x00,   // CFGR2: VOV[3:0] | VUV[11:8]
-        0x00,   // CFGR3: VOV[11:4]
-        0x00,   // CFGR4: DCC1-DCC8 all off (no cell balancing)
-        0x00,   // CFGR5: DCTO[3:0]=0, DCC9-DCC12 off
+        0xFE,                                       // CFGR0: GPIO1-5 pull-downs off, REFON=1, ADCOPT=0
+        (uint8_t)(vuv & 0xFF),                      // CFGR1: VUV[7:0]
+        (uint8_t)(((vov & 0x0F) << 4) | (vuv >> 8)),// CFGR2: VOV[3:0] | VUV[11:8]
+        (uint8_t)(vov >> 4),                        // CFGR3: VOV[11:4]
+        0x00,                                       // CFGR4: DCC1-DCC8 all off (no cell balancing)
+        0x00,                                       // CFGR5: DCTO[3:0]=0, DCC9-DCC12 off
     };
 
-    // Wake the LTC6804 from sleep state (long CS pulse)
+    // Wake the LTC6804 from sleep state (long CS pulse) and allow oscillator to stabilize.
+    // Datasheet tSTART (oscillator startup from SLEEP) can be up to ~3 ms.
     wakeup_sleep();
+    vTaskDelay(pdMS_TO_TICKS(4));
 
-    ret = ltc6804_wrcfg(cfg);
-    if (ret != ESP_OK) {
-        BMS_LOGE("LTC6804 write config failed: %s", esp_err_to_name(ret));
-        return ret;
+    // Write configuration with readback verification and retry
+    uint8_t r_cfg[8];
+    bool cfg_ok = false;
+
+    for (int attempt = 0; attempt < LTC6804_MAX_RETRIES; ++attempt) {
+        ret = ltc6804_wrcfg(cfg);
+        if (ret != ESP_OK) {
+            BMS_LOGW("WRCFG attempt %d failed: %s", attempt + 1, esp_err_to_name(ret));
+            continue;
+        }
+
+        // Read back and verify config was latched
+        ret = ltc6804_rdcfg(r_cfg);
+        if (ret != ESP_OK) {
+            BMS_LOGW("RDCFG attempt %d failed: %s", attempt + 1, esp_err_to_name(ret));
+            continue;
+        }
+
+        // Verify CFGR1-CFGR3 match written values (CFGR0 has read-only bits so skip exact match)
+        if (r_cfg[1] == cfg[1] && r_cfg[2] == cfg[2] && r_cfg[3] == cfg[3]) {
+            cfg_ok = true;
+            break;
+        }
+
+        BMS_LOGW("WRCFG verify failed (attempt %d): wrote %02X %02X %02X, read %02X %02X %02X",
+                 attempt + 1, cfg[1], cfg[2], cfg[3], r_cfg[1], r_cfg[2], r_cfg[3]);
+        wakeup_sleep();
+        vTaskDelay(pdMS_TO_TICKS(4));
+    }
+
+    if (!cfg_ok) {
+        BMS_LOGE("LTC6804 write config failed after %d attempts", LTC6804_MAX_RETRIES);
+        return ESP_FAIL;
     }
 
     BMS_LOGI("LTC6804 ADC module initialized (SPI host %d, CS pin %d)", LTC6804_SPI_HOST, LTC6804_PIN_CS);
-
-    // Diagnostic: read back configuration to verify SPI communication
-    uint8_t r_cfg[8];
-    ret = ltc6804_rdcfg(r_cfg);
-    if (ret == ESP_OK) {
-        BMS_LOGI("RDCFG OK: %02X %02X %02X %02X %02X %02X  PEC: %02X %02X",
-                 r_cfg[0], r_cfg[1], r_cfg[2], r_cfg[3], r_cfg[4], r_cfg[5],
-                 r_cfg[6], r_cfg[7]);
-    } else {
-        BMS_LOGW("RDCFG failed: %s  raw: %02X %02X %02X %02X %02X %02X %02X %02X",
-                 esp_err_to_name(ret),
-                 r_cfg[0], r_cfg[1], r_cfg[2], r_cfg[3],
-                 r_cfg[4], r_cfg[5], r_cfg[6], r_cfg[7]);
-    }
+    BMS_LOGI("RDCFG OK: %02X %02X %02X %02X %02X %02X  PEC: %02X %02X",
+             r_cfg[0], r_cfg[1], r_cfg[2], r_cfg[3], r_cfg[4], r_cfg[5],
+             r_cfg[6], r_cfg[7]);
 
     return ESP_OK;
 }
@@ -259,6 +304,67 @@ esp_err_t ltc6804_read_cell_voltages(float *voltages, uint8_t num_cells)
     return ESP_OK;
 }
 
+/// This function reads the LTC6804 status registers. Triggers a status ADC conversion, reads both
+/// Status Register Groups A and B, verifies PEC, and returns the raw 6-byte contents of each group.
+///
+/// STATA layout (Table 43): STAR0-1: SOC[15:0], STAR2-3: ITMP[15:0], STAR4-5: VA[15:0]
+/// STATB layout (Table 44): STBR0-1: VD[15:0], STBR2: C4OV..C1UV, STBR3: C8OV..C5UV,
+///                          STBR4: C12OV..C9UV, STBR5: REV[7:4] RSVD[3:2] MUXFAIL[1] THSD[0]
+///
+/// \param[out] stata  Buffer of 6 bytes to receive Status Register Group A raw data
+/// \param[out] statb  Buffer of 6 bytes to receive Status Register Group B raw data
+/// \return ESP_OK on success, ESP_ERR_INVALID_CRC on PEC mismatch
+esp_err_t ltc6804_read_status(uint8_t stata[6], uint8_t statb[6])
+{
+    if (!stata || !statb) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    esp_err_t ret = ESP_FAIL;
+    uint8_t reg_data[NUM_RX_BYTES];
+
+    for (int attempt = 0; attempt < LTC6804_MAX_RETRIES; ++attempt) {
+        ret = ltc6804_adstat();
+        if (ret != ESP_OK) {
+            continue;
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(ADC_CONV_DELAY_MS));
+
+        // Read Status Register Group A
+        ret = ltc6804_rdstat_reg(1, reg_data);
+        if (ret != ESP_OK) {
+            continue;
+        }
+
+        uint16_t received_pec = ((uint16_t)reg_data[6] << 8) | reg_data[7];
+        uint16_t calc_pec = pec15_calc(BYTES_IN_REG, reg_data);
+        if (received_pec != calc_pec) {
+            continue;
+        }
+
+        memcpy(stata, reg_data, BYTES_IN_REG);
+
+        // Read Status Register Group B
+        ret = ltc6804_rdstat_reg(2, reg_data);
+        if (ret != ESP_OK) {
+            continue;
+        }
+
+        received_pec = ((uint16_t)reg_data[6] << 8) | reg_data[7];
+        calc_pec = pec15_calc(BYTES_IN_REG, reg_data);
+        if (received_pec != calc_pec) {
+            continue;
+        }
+
+        memcpy(statb, reg_data, BYTES_IN_REG);
+
+        return ESP_OK;
+    }
+
+    return (ret != ESP_OK) ? ret : ESP_ERR_INVALID_CRC;
+}
+
 /*==============================================================================================================*/
 /*                                       Private Function Definitions                                           */
 /*==============================================================================================================*/
@@ -279,13 +385,14 @@ static uint16_t pec15_calc(uint8_t len, const uint8_t *data)
     return remainder * 2; // CRC15 has 0 in LSB
 }
 
-/// This function maps ADC mode, discharge control, and channel selection
-/// into the 2-byte ADCV command stored in s_adcv_cmd.
+/// This function maps ADC mode, discharge control, cell channel selection, and GPIO channel
+/// selection into the 2-byte ADCV and ADAX commands stored in s_adcv_cmd and s_adax_cmd.
 ///
-/// \param md  ADC conversion mode (LTC6804_MD_FAST / NORMAL / FILTERED)
-/// \param dcp Discharge control (LTC6804_DCP_DISABLED / ENABLED)
-/// \param ch  Cell channel selection (LTC6804_CH_ALL .. LTC6804_CH_6_AND_12)
-static void set_adc_cmd(uint8_t md, uint8_t dcp, uint8_t ch)
+/// \param md   ADC conversion mode (LTC6804_MD_FAST / NORMAL / FILTERED)
+/// \param dcp  Discharge control (LTC6804_DCP_DISABLED / ENABLED)
+/// \param ch   Cell channel selection (LTC6804_CH_ALL .. LTC6804_CH_6_AND_12)
+/// \param chg  GPIO channel selection (LTC6804_AUX_CH_ALL .. LTC6804_AUX_CH_VREF2)
+static void set_adc_cmd(uint8_t md, uint8_t dcp, uint8_t ch, uint8_t chg)
 {
     uint8_t md_bits;
 
@@ -297,6 +404,24 @@ static void set_adc_cmd(uint8_t md, uint8_t dcp, uint8_t ch)
 
     md_bits = (md & 0x01) << 7;
     s_adcv_cmd[1] = md_bits + 0x60 + (dcp << 4) + ch;
+
+    // ADAX command encoding per LTC6804 datasheet:
+    // Byte 0: 0x04 + MD[1]
+    // Byte 1: MD[0]<<7 + 0x60 + CHG[2:0]
+    md_bits = (md & 0x02) >> 1;
+    s_adax_cmd[0] = md_bits + 0x04;
+
+    md_bits = (md & 0x01) << 7;
+    s_adax_cmd[1] = md_bits + 0x60 + chg;
+
+    // ADSTAT command encoding per LTC6804 datasheet:
+    // Byte 0: 0x04 + MD[1]
+    // Byte 1: MD[0]<<7 + 0x68 + CHST[2:0]  (CHST=0 for all status groups)
+    md_bits = (md & 0x02) >> 1;
+    s_adstat_cmd[0] = md_bits + 0x04;
+
+    md_bits = (md & 0x01) << 7;
+    s_adstat_cmd[1] = md_bits + 0x68;
 }
 
 /// This function performs an SPI transfer (simultaneous TX and RX).
@@ -532,5 +657,255 @@ static esp_err_t ltc6804_rdcfg(uint8_t r_cfg[8])
     if (received_pec != calc_pec) {
         return ESP_ERR_INVALID_CRC;
     }
+    return ESP_OK;
+}
+
+/// This function sends the ADAX (start GPIO/auxiliary ADC conversion) command to the LTC6804
+/// in addressed mode. Ported from Linduino LTC6804_adax().
+///
+/// \return ESP_OK on success
+static esp_err_t ltc6804_adax(void)
+{
+    uint8_t cmd[4];
+
+    wakeup_idle();
+
+    cmd[0] = s_adax_cmd[0];
+    cmd[1] = s_adax_cmd[1];
+
+    uint16_t pec = pec15_calc(2, cmd);
+    cmd[2] = (uint8_t)(pec >> 8);
+    cmd[3] = (uint8_t)(pec);
+
+    cs_low();
+    esp_err_t ret = spi_transfer(cmd, NULL, 4);
+    cs_high();
+    return ret;
+}
+
+/// This function reads one auxiliary register group from the LTC6804 in addressed mode.
+/// Each register group contains 3 GPIO/Vref2 values (6 data bytes) + 2 PEC bytes = 8 bytes total.
+/// Register A: GPIO1, GPIO2, GPIO3
+/// Register B: GPIO4, GPIO5, Vref2
+///
+/// \param reg   Register group number (1=A, 2=B)
+/// \param data  Buffer of at least NUM_RX_BYTES (8) bytes to receive raw data
+/// \return ESP_OK on success
+static esp_err_t ltc6804_rdaux_reg(uint8_t reg, uint8_t *data)
+{
+    // RDAUXA = 0x0C, RDAUXB = 0x0E
+    static const uint8_t reg_cmd[2] = {0x0C, 0x0E};
+
+    if (reg < 1 || reg > 2) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    uint8_t cmd[4];
+    cmd[0] = LTC6804_ADDR_CMD(LTC6804_IC_ADDR);
+    cmd[1] = reg_cmd[reg - 1];
+
+    uint16_t pec = pec15_calc(2, cmd);
+    cmd[2] = (uint8_t)(pec >> 8);
+    cmd[3] = (uint8_t)(pec);
+
+    uint8_t tx_buf[4 + NUM_RX_BYTES];
+    uint8_t rx_buf[4 + NUM_RX_BYTES];
+
+    memcpy(tx_buf, cmd, 4);
+    memset(&tx_buf[4], 0xFF, NUM_RX_BYTES);
+
+    wakeup_idle();
+
+    cs_low();
+    esp_err_t ret = spi_transfer(tx_buf, rx_buf, sizeof(tx_buf));
+    cs_high();
+
+    if (ret != ESP_OK) {
+        return ret;
+    }
+
+    memcpy(data, &rx_buf[4], NUM_RX_BYTES);
+    return ESP_OK;
+}
+
+/// This function reads both auxiliary register groups (A and B) from the LTC6804,
+/// parses the 16-bit raw GPIO/Vref2 codes, and verifies the PEC for each group.
+/// Auxiliary register layout:
+///   aux_codes[0..4] = GPIO1..GPIO5 raw ADC codes
+///   aux_codes[5]    = Vref2 raw ADC code
+///
+/// \param[out] aux_codes  Array of 6 uint16_t values (GPIO1..5 + Vref2 raw ADC codes)
+/// \return ESP_OK on success, ESP_ERR_INVALID_CRC if any register PEC check fails
+static esp_err_t ltc6804_rdaux(uint16_t aux_codes[LTC6804_NUM_GPIO + 1])
+{
+    uint8_t reg_data[NUM_RX_BYTES];
+    int pec_errors = 0;
+
+    for (uint8_t reg = 1; reg <= LTC6804_NUM_AUX_REG; ++reg) {
+        esp_err_t ret = ltc6804_rdaux_reg(reg, reg_data);
+        if (ret != ESP_OK) {
+            return ret;
+        }
+
+        // Parse 3 auxiliary values from the 6 data bytes (little-endian 16-bit)
+        for (uint8_t aux = 0; aux < LTC6804_AUX_PER_REG; ++aux) {
+            uint8_t idx = aux * 2;
+            uint16_t raw = reg_data[idx] | ((uint16_t)reg_data[idx + 1] << 8);
+            aux_codes[aux + (reg - 1) * LTC6804_AUX_PER_REG] = raw;
+        }
+
+        // Verify PEC
+        uint16_t received_pec = ((uint16_t)reg_data[6] << 8) | reg_data[7];
+        uint16_t calc_pec = pec15_calc(BYTES_IN_REG, reg_data);
+        if (received_pec != calc_pec) {
+            pec_errors++;
+        }
+    }
+
+    if (pec_errors > 0) {
+        return ESP_ERR_INVALID_CRC;
+    }
+
+    return ESP_OK;
+}
+
+/// This function triggers an auxiliary ADC conversion on the LTC6804, waits for completion,
+/// reads back all auxiliary registers, and converts raw codes to voltages in volts.
+/// GPIO1..GPIO5 voltages are returned in the output array.
+///
+/// \param[out] voltages   Array to receive GPIO voltages (in volts), must hold at least num_gpio elements
+/// \param[in]  num_gpio   Number of GPIOs to read (1..LTC6804_NUM_GPIO)
+/// \return ESP_OK on success, ESP_ERR_INVALID_ARG on bad parameters, ESP_ERR_INVALID_CRC on PEC mismatch
+esp_err_t ltc6804_read_gpio_voltages(float *voltages, uint8_t num_gpio)
+{
+    if (!voltages || num_gpio == 0 || num_gpio > LTC6804_NUM_GPIO) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    uint16_t aux_codes[LTC6804_NUM_GPIO + 1]; // GPIO1..5 + Vref2
+    esp_err_t ret = ESP_FAIL;
+
+    for (int attempt = 0; attempt < LTC6804_MAX_RETRIES; ++attempt) {
+        ret = ltc6804_adax();
+        if (ret != ESP_OK) {
+            continue;
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(ADC_CONV_DELAY_MS));
+
+        ret = ltc6804_rdaux(aux_codes);
+        if (ret == ESP_OK) {
+            break;
+        }
+    }
+
+    if (ret != ESP_OK) {
+        static uint32_t s_aux_fail_cnt = 0;
+        if ((++s_aux_fail_cnt % 20) == 1) {
+            BMS_LOGW("LTC6804 aux read failed (%lu total, last %d attempts): %s",
+                     (unsigned long)s_aux_fail_cnt, LTC6804_MAX_RETRIES, esp_err_to_name(ret));
+        }
+        return ret;
+    }
+
+    // Convert raw ADC codes to volts: each LSB = 100 µV = 0.0001 V
+    for (uint8_t i = 0; i < num_gpio; ++i) {
+        voltages[i] = (float)aux_codes[i] * 0.0001f;
+    }
+
+    return ESP_OK;
+}
+
+/// This function reads pack current from a current sensor connected to an LTC6804 GPIO pin.
+/// The GPIO voltage is converted to current using the configured sensitivity and offset:
+///   current = (V_gpio - V_offset) / sensitivity
+///
+/// \param[out] current_amps  Pointer to receive the measured current in amperes
+/// \return ESP_OK on success, ESP_ERR_INVALID_ARG on NULL pointer, or SPI/PEC error
+esp_err_t ltc6804_read_current(float *current_amps)
+{
+    if (!current_amps) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    float gpio_voltages[LTC6804_NUM_GPIO];
+    esp_err_t ret = ltc6804_read_gpio_voltages(gpio_voltages, LTC6804_NUM_GPIO);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+
+    // Convert GPIO voltage to current using sensor characteristics
+    uint8_t gpio_idx = LTC6804_CURRENT_GPIO - 1; // GPIO1 = index 0
+    float v_sensor = gpio_voltages[gpio_idx];
+    *current_amps = (v_sensor - LTC6804_CURRENT_OFFSET_V) / LTC6804_CURRENT_SENSITIVITY;
+
+    return ESP_OK;
+}
+
+/// This function sends the ADSTAT (start status group ADC conversion) command to the LTC6804.
+/// Triggers conversion of internal temperature, sum of cells voltage, and power supply voltages.
+///
+/// \return ESP_OK on success
+static esp_err_t ltc6804_adstat(void)
+{
+    uint8_t cmd[4];
+
+    wakeup_idle();
+
+    cmd[0] = s_adstat_cmd[0];
+    cmd[1] = s_adstat_cmd[1];
+
+    uint16_t pec = pec15_calc(2, cmd);
+    cmd[2] = (uint8_t)(pec >> 8);
+    cmd[3] = (uint8_t)(pec);
+
+    cs_low();
+    esp_err_t ret = spi_transfer(cmd, NULL, 4);
+    cs_high();
+    return ret;
+}
+
+/// This function reads one status register group from the LTC6804 in addressed mode.
+/// Each register group contains 6 data bytes + 2 PEC bytes = 8 bytes total.
+/// Register A (RDSTATA = 0x10): SOC[15:0], ITMP[15:0], VA[15:0]
+/// Register B (RDSTATB = 0x12): VD[15:0], flags/revision
+///
+/// \param reg   Register group number (1=A, 2=B)
+/// \param data  Buffer of at least NUM_RX_BYTES (8) bytes to receive raw data
+/// \return ESP_OK on success
+static esp_err_t ltc6804_rdstat_reg(uint8_t reg, uint8_t *data)
+{
+    // RDSTATA = 0x10, RDSTATB = 0x12
+    static const uint8_t reg_cmd[2] = {0x10, 0x12};
+
+    if (reg < 1 || reg > 2) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    uint8_t cmd[4];
+    cmd[0] = LTC6804_ADDR_CMD(LTC6804_IC_ADDR);
+    cmd[1] = reg_cmd[reg - 1];
+
+    uint16_t pec = pec15_calc(2, cmd);
+    cmd[2] = (uint8_t)(pec >> 8);
+    cmd[3] = (uint8_t)(pec);
+
+    uint8_t tx_buf[4 + NUM_RX_BYTES];
+    uint8_t rx_buf[4 + NUM_RX_BYTES];
+
+    memcpy(tx_buf, cmd, 4);
+    memset(&tx_buf[4], 0xFF, NUM_RX_BYTES);
+
+    wakeup_idle();
+
+    cs_low();
+    esp_err_t ret = spi_transfer(tx_buf, rx_buf, sizeof(tx_buf));
+    cs_high();
+
+    if (ret != ESP_OK) {
+        return ret;
+    }
+
+    memcpy(data, &rx_buf[4], NUM_RX_BYTES);
     return ESP_OK;
 }

@@ -42,6 +42,10 @@ static char s_sw_version[32] = {0};
 static uint32_t s_last_total_runtime = 0;
 /// Previous idle runtime for delta calculation
 static uint32_t s_last_idle_runtime = 0;
+/// Cached LTC6804 status (updated from Core 1, read from Core 0)
+static ltc6804_status_t s_ltc_status = {0};
+/// Spinlock for protecting LTC6804 status access across cores
+static portMUX_TYPE s_ltc_status_lock = portMUX_INITIALIZER_UNLOCKED;
 
 /*==============================================================================================================*/
 /*                                      Public Variables and Constants                                          */
@@ -119,21 +123,44 @@ void telemetry_get_esp32_telemetry(esp32_telemetry_t *telem)
     telem->cpu_load = get_cpu_load();
     telem->free_heap = esp_get_free_heap_size();
     telem->min_free_heap = esp_get_minimum_free_heap_size();
+    telem->reset_reason = (uint8_t)esp_reset_reason();
 }
 
-/// Get LTC6804 status registers. This is a placeholder - implement actual register reading.
+/// Get LTC6804 status registers. Returns cached status updated by telemetry_update_ltc6804_status().
 ///
 /// \param status Pointer to status structure to fill
 /// \return None
 void telemetry_get_ltc6804_status(ltc6804_status_t *status)
 {
     if (!status) return;
-    
-    // TODO: Implement actual LTC6804 status register reading
-    // For now, return placeholder values
-    status->status_a = 0;
-    status->status_b = 0;
-    status->valid = false;
+
+    taskENTER_CRITICAL(&s_ltc_status_lock);
+    *status = s_ltc_status;
+    taskEXIT_CRITICAL(&s_ltc_status_lock);
+}
+
+/// Update cached LTC6804 status. Called from Core 1 after reading status registers.
+/// Parses raw register bytes into the ltc6804_status_t fields.
+///
+/// \param stata Raw 6 bytes from Status Register Group A (SOC, ITMP, VA)
+/// \param statb Raw 6 bytes from Status Register Group B (VD, cell flags, diag)
+/// \param valid True if the status registers were read successfully
+/// \return None
+void telemetry_update_ltc6804_status(const uint8_t stata[6], const uint8_t statb[6], bool valid)
+{
+    taskENTER_CRITICAL(&s_ltc_status_lock);
+    if (valid) {
+        // STATA: SOC (bytes 0-1), ITMP (bytes 2-3), VA (bytes 4-5) — all little-endian
+        s_ltc_status.soc  = stata[0] | ((uint16_t)stata[1] << 8);
+        s_ltc_status.itmp = stata[2] | ((uint16_t)stata[3] << 8);
+        s_ltc_status.va   = stata[4] | ((uint16_t)stata[5] << 8);
+        // STATB: VD (bytes 0-1), cell flags (bytes 2-4), diag (byte 5) — all little-endian
+        s_ltc_status.vd         = statb[0] | ((uint16_t)statb[1] << 8);
+        s_ltc_status.cell_flags = statb[2] | ((uint32_t)statb[3] << 8) | ((uint32_t)statb[4] << 16);
+        s_ltc_status.diag       = statb[5];
+    }
+    s_ltc_status.valid = valid;
+    taskEXIT_CRITICAL(&s_ltc_status_lock);
 }
 
 /*==============================================================================================================*/

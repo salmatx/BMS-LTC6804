@@ -12,6 +12,8 @@
 #include "bms_adapter.h"
 #include "bms_data.h"
 #include "intercore_comm.h"
+#include "ltc6804.h"
+#include "telemetry.h"
 #include "logging.h"
 
 /*==============================================================================================================*/
@@ -25,6 +27,9 @@
 
 /// Fast Core real-time processing task period in milliseconds.
 #define FAST_CORE_PERIOD_MS     50
+
+/// LTC6804 status register read interval (every Nth sample cycle, 20 = once per second at 20 Hz)
+#define STATUS_READ_INTERVAL    20
 
 /*==============================================================================================================*/
 /*                                              Private Types                                                   */
@@ -154,6 +159,8 @@ static void fast_core_task()
     TickType_t end;
 
     bms_sample_t sample;
+    // Counter for periodic LTC6804 status register reading
+    uint32_t status_counter = 0;
 
     // Main Fast Core loop
     while (!s_should_exit)
@@ -178,6 +185,14 @@ static void fast_core_task()
             }
         } else {
             BMS_LOGE("BMS read_sample failed: %s", esp_err_to_name(err));
+        }
+
+        // Periodically read LTC6804 status registers and update telemetry cache
+        if (++status_counter >= STATUS_READ_INTERVAL) {
+            status_counter = 0;
+            uint8_t stata[6] = {0}, statb[6] = {0};
+            esp_err_t status_ret = ltc6804_read_status(stata, statb);
+            telemetry_update_ltc6804_status(stata, statb, (status_ret == ESP_OK));
         }
 
         // End timing and check for real-time overrun

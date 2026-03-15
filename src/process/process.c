@@ -188,23 +188,23 @@ static void check_limits_sample(const bms_sample_t *s, bms_stats_t *flags)
     for (int i = 0; i < g_cfg.battery.num_cells; ++i) {
         float v = s->cell_v[i];
         if (v < g_cfg.battery.cell_v_min) {
-            // Undervolatage bit
-            flags->cell_errors |= (uint16_t)(0x01u << (i * 2 + 1u));
+            // Undervoltage bit
+            flags->cell_errors |= (uint32_t)(1u << (i * 2 + 1u));
         }
         if (v > g_cfg.battery.cell_v_max) {
             // Overvoltage bit
-            flags->cell_errors |= (uint16_t)(0x01u << (i * 2 + 2u));
+            flags->cell_errors |= (uint32_t)(1u << (i * 2 + 2u));
         }
     }
 
     if (g_cfg.battery.current_enable) {
         if (s->pack_i < g_cfg.battery.current_min) {
             // Undercurrent bit
-            flags->cell_errors |= 0x0800u;
+            flags->cell_errors |= (1u << 25);
         }
         if (s->pack_i > g_cfg.battery.current_max) {
             // Overcurrent bit
-            flags->cell_errors |= 0x1000u;
+            flags->cell_errors |= (1u << 26);
         }
     }
 }
@@ -223,18 +223,11 @@ static void init_stats_from_first(const bms_sample_t *raw_sample, bms_stats_t *o
     out->cell_errors = 0;
 
     for (int c = 0; c < g_cfg.battery.num_cells; ++c) {
-        float v = raw_sample->cell_v[c];
-        out->cell_v_min[c] = v;
-        out->cell_v_max[c] = v;
         out->cell_v_avg[c] = 0.0f;
     }
 
-    out->pack_v_min = raw_sample->pack_v;
-    out->pack_v_max = raw_sample->pack_v;
     out->pack_v_avg = 0.0f;
 
-    out->pack_i_min = raw_sample->pack_i;
-    out->pack_i_max = raw_sample->pack_i;
     out->pack_i_avg = 0.0f;
 }
 
@@ -262,20 +255,13 @@ static void bms_sample_zero(bms_sample_t *sample)
 static void accumulate_sample(const bms_sample_t *raw_sample, bms_stats_t *out)
 {
     for (int c = 0; c < g_cfg.battery.num_cells; ++c) {
-        float v = raw_sample->cell_v[c];
-        out->cell_v_avg[c] += v;
-        if (v < out->cell_v_min[c]) out->cell_v_min[c] = v;
-        if (v > out->cell_v_max[c]) out->cell_v_max[c] = v;
+        out->cell_v_avg[c] += raw_sample->cell_v[c];
     }
 
     out->pack_v_avg += raw_sample->pack_v;
-    if (raw_sample->pack_v < out->pack_v_min) out->pack_v_min = raw_sample->pack_v;
-    if (raw_sample->pack_v > out->pack_v_max) out->pack_v_max = raw_sample->pack_v;
 
     if (g_cfg.battery.current_enable) {
         out->pack_i_avg += raw_sample->pack_i;
-        if (raw_sample->pack_i < out->pack_i_min) out->pack_i_min = raw_sample->pack_i;
-        if (raw_sample->pack_i > out->pack_i_max) out->pack_i_max = raw_sample->pack_i;
     }
 
     out->sample_count++;

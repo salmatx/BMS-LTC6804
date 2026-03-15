@@ -21,6 +21,15 @@
 /// Number of cells per register group
 #define LTC6804_CELLS_PER_REG  3
 
+/// Number of GPIO channels available on the LTC6804
+#define LTC6804_NUM_GPIO       5
+
+/// Number of auxiliary register groups (A, B)
+#define LTC6804_NUM_AUX_REG    2
+
+/// Number of auxiliary values per register group
+#define LTC6804_AUX_PER_REG   3
+
 /// SPI pin assignments — adjust to match your hardware wiring
 /// GPIO 23/19/18/5 are native VSPI (SPI3_HOST) pins on ESP32
 #define LTC6804_SPI_HOST       SPI3_HOST
@@ -49,9 +58,30 @@
 #define LTC6804_CH_5_AND_11    5
 #define LTC6804_CH_6_AND_12    6
 
+/// GPIO/auxiliary channel selection for ADAX conversion command.
+#define LTC6804_AUX_CH_ALL     0   ///< Convert all GPIOs and 2nd reference
+#define LTC6804_AUX_CH_GPIO1   1   ///< Convert GPIO1 only
+#define LTC6804_AUX_CH_GPIO2   2   ///< Convert GPIO2 only
+#define LTC6804_AUX_CH_GPIO3   3   ///< Convert GPIO3 only
+#define LTC6804_AUX_CH_GPIO4   4   ///< Convert GPIO4 only
+#define LTC6804_AUX_CH_GPIO5   5   ///< Convert GPIO5 only
+#define LTC6804_AUX_CH_VREF2   6   ///< Convert Vref2 only
+
 /// Discharge control for ADC conversion command. Defines whether cell discharge is permitted during ADC conversion.
 #define LTC6804_DCP_DISABLED   0   ///< Discharge not permitted during conversion
 #define LTC6804_DCP_ENABLED    1   ///< Discharge permitted during conversion
+
+/// Current sense configuration — adjust to match your hardware setup.
+/// GPIO channel connected to the current sensor output.
+#define LTC6804_CURRENT_GPIO       1
+
+/// Current sensor sensitivity in V/A.
+/// Example: 50A LEM sensor with ±1.667V output range → 1.667/50 = 0.03334 V/A
+#define LTC6804_CURRENT_SENSITIVITY  0.03334f
+
+/// Voltage output of the current sensor at zero current (offset / bias).
+/// Bidirectional sensors (e.g. hall effect) typically output Vcc/2 ≈ 2.5V at zero current.
+#define LTC6804_CURRENT_OFFSET_V     2.5f
 
 /*==============================================================================================================*/
 /*                                               Public Types                                                   */
@@ -68,8 +98,11 @@
 /*==============================================================================================================*/
 /*                                        Public Function Prototypes                                            */
 /*==============================================================================================================*/
-esp_err_t ltc6804_init(void);
+esp_err_t ltc6804_init(float cell_v_min, float cell_v_max);
 esp_err_t ltc6804_read_cell_voltages(float *voltages, uint8_t num_cells);
+esp_err_t ltc6804_read_gpio_voltages(float *voltages, uint8_t num_gpio);
+esp_err_t ltc6804_read_current(float *current_amps);
+esp_err_t ltc6804_read_status(uint8_t stata[6], uint8_t statb[6]);
 
 /*==============================================================================================================*/
 /*                                          Public Inline Functions                                             */
