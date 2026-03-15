@@ -8,4 +8,13 @@ sdkconfig.old
 .vscode/
 .idea/
 
+grafana-data/
+influxdb2-config
+influxdb2-data
+mosquitto/data
+mosquitto/log
+
+
 config.json
+
+.env
