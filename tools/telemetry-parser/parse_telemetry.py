@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 """Parse LTC6804 telemetry CSV data into a human-readable log file."""
 
-import argparse
 import csv
-import os
 
 # ESP32 reset reason mapping (from esp_reset_reason_t)
 RESET_REASONS = {
@@ -93,31 +91,10 @@ def parse_row(row: dict) -> str:
     return block
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Parse LTC6804 telemetry CSV into a log.")
-    parser.add_argument("-i", "--input", required=True, help="Path to the input CSV file")
-    parser.add_argument("-o", "--output", help="Path to the output text file (default: <input>_parsed.txt)")
-    args = parser.parse_args()
-
-    input_path = args.input
-    if args.output:
-        output_path = args.output
-    else:
-        base = os.path.splitext(input_path)[0]
-        output_path = base + "_parsed.txt"
-
-    with open(input_path, newline="", encoding="utf-8") as csvfile:
+def parse_file(path: str) -> str:
+    """Parse a CSV file and return the formatted output as a string."""
+    with open(path, newline="", encoding="utf-8") as csvfile:
         reader = csv.DictReader(csvfile)
-        blocks = []
-        for row in reader:
-            blocks.append(parse_row(row))
-
+        blocks = [parse_row(row) for row in reader]
     separator = "-" * 60 + "\n"
-    with open(output_path, "w", encoding="utf-8") as outfile:
-        outfile.write(separator.join(blocks))
-
-    print(f"Parsed {len(blocks)} rows -> {output_path}")
-
-
-if __name__ == "__main__":
-    main()
+    return separator.join(blocks)

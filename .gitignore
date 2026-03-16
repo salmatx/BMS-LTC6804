@@ -7,6 +7,9 @@ sdkconfig.old
 
 .vscode/
 .idea/
+.env
+.venv
+__pycache__/
 
 grafana-data/
 influxdb2-config
@@ -16,5 +19,3 @@ mosquitto/log
 
 
 config.json
-
-.env
