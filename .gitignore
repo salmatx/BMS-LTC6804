@@ -17,4 +17,4 @@ influxdb2-data
 mosquitto/data
 mosquitto/log
 
-config.json
+# config.json
