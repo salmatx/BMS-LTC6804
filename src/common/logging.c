@@ -4,6 +4,11 @@
 /*                                                Includes                                                      */
 /*==============================================================================================================*/
 #include "logging.h"
+#include "esp_system.h"
+#include "esp_attr.h"
+#include <stdio.h>
+#include <stdarg.h>
+#include <string.h>
 
 /*==============================================================================================================*/
 /*                                             Private Macros                                                   */
@@ -24,6 +29,20 @@
 /*==============================================================================================================*/
 /*                                            Private Variables                                                 */
 /*==============================================================================================================*/
+/// Magic value used to validate RTC ring buffer contents after reset
+#define RTC_LOG_MAGIC 0xDEADBEEFu
+
+/// RTC ring buffer structure for storing last N error log entries.
+/// Placed in RTC NOINIT memory so it survives watchdog resets.
+typedef struct {
+    uint32_t magic;                                         ///< Magic number to validate buffer integrity
+    uint8_t  head;                                          ///< Index of oldest entry
+    uint8_t  count;                                         ///< Number of valid entries (0..BMS_LOG_ENTRY_COUNT)
+    char     entries[BMS_LOG_ENTRY_COUNT][BMS_LOG_ENTRY_MAXLEN]; ///< Ring buffer of formatted error strings
+} rtc_log_buf_t;
+
+/// RTC NOINIT ring buffer instance (survives soft resets, cleared on power-on)
+static RTC_NOINIT_ATTR rtc_log_buf_t s_rtc_log;
 
 /*==============================================================================================================*/
 /*                                      Public Variables and Constants                                          */
@@ -41,6 +60,12 @@ void bms_logging_init(void)
 {
     // Set default global log level to INFO
     esp_log_level_set("*", ESP_LOG_INFO);
+
+    // Validate RTC log buffer. If magic is invalid (e.g. power-on reset), clear it.
+    if (s_rtc_log.magic != RTC_LOG_MAGIC) {
+        memset(&s_rtc_log, 0, sizeof(s_rtc_log));
+        s_rtc_log.magic = RTC_LOG_MAGIC;
+    }
 }
 
 /// This function sets the global log level for all modules. Lower log levels than selected will be suppressed.
@@ -63,6 +88,70 @@ void bms_logging_set_module_level(const char *module_tag, esp_log_level_t level)
     if (module_tag != NULL) {
         esp_log_level_set(module_tag, level);
     }
+}
+
+/// This function stores a formatted error log message into the RTC NOINIT ring buffer.
+/// Oldest entry is overwritten when buffer is full.
+///
+/// \param tag Module tag string
+/// \param fmt printf-style format string
+/// \param ... Format arguments
+/// \return None
+void bms_log_rtc_store(const char *tag, const char *fmt, ...)
+{
+    // Write into next slot (overwrite oldest if full)
+    uint8_t idx = (s_rtc_log.head + s_rtc_log.count) % BMS_LOG_ENTRY_COUNT;
+    if (s_rtc_log.count >= BMS_LOG_ENTRY_COUNT) {
+        // Buffer full — advance head to overwrite oldest
+        s_rtc_log.head = (s_rtc_log.head + 1) % BMS_LOG_ENTRY_COUNT;
+    } else {
+        s_rtc_log.count++;
+    }
+
+    // Format: "[TAG] message"
+    int off = snprintf(s_rtc_log.entries[idx], BMS_LOG_ENTRY_MAXLEN, "[%s] ", tag ? tag : "?");
+    if (off < 0) off = 0;
+    if ((size_t)off < BMS_LOG_ENTRY_MAXLEN) {
+        va_list args;
+        va_start(args, fmt);
+        vsnprintf(s_rtc_log.entries[idx] + off, BMS_LOG_ENTRY_MAXLEN - (size_t)off, fmt, args);
+        va_end(args);
+    }
+}
+
+/// This function retrieves all error log entries from the RTC ring buffer in chronological order (oldest first).
+///
+/// \param out Output array of strings (must be at least BMS_LOG_ENTRY_COUNT elements of BMS_LOG_ENTRY_MAXLEN)
+/// \param count Output: number of valid entries copied
+/// \return None
+void bms_log_rtc_get_entries(char out[][BMS_LOG_ENTRY_MAXLEN], int *count)
+{
+    if (!out || !count) return;
+
+    if (s_rtc_log.magic != RTC_LOG_MAGIC || s_rtc_log.count == 0) {
+        *count = 0;
+        return;
+    }
+
+    uint8_t n = s_rtc_log.count;
+    if (n > BMS_LOG_ENTRY_COUNT) n = BMS_LOG_ENTRY_COUNT;
+
+    for (uint8_t i = 0; i < n; i++) {
+        uint8_t idx = (s_rtc_log.head + i) % BMS_LOG_ENTRY_COUNT;
+        memcpy(out[i], s_rtc_log.entries[idx], BMS_LOG_ENTRY_MAXLEN);
+        out[i][BMS_LOG_ENTRY_MAXLEN - 1] = '\0';
+    }
+    *count = n;
+}
+
+/// This function clears the RTC error log ring buffer.
+///
+/// \param None
+/// \return None
+void bms_log_rtc_clear(void)
+{
+    memset(&s_rtc_log, 0, sizeof(s_rtc_log));
+    s_rtc_log.magic = RTC_LOG_MAGIC;
 }
 
 /*==============================================================================================================*/

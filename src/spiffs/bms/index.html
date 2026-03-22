@@ -86,6 +86,10 @@
           addRow(tbody, 'IP Mode', '<strong>DHCP</strong>');
         }
         addRow(tbody, 'MQTT Broker URI', j?.mqtt?.uri ?? 'Not configured');
+        const adapter = j?.battery?.adapter ?? 'ltc6804';
+        addRow(tbody, 'BMS Adapter', adapter === 'demo'
+          ? '<strong style="color:orange;">Demo (random data)</strong>'
+          : '<strong style="color:green;">LTC6804 (hardware)</strong>');
         addRow(tbody, 'Number of Cells', `<strong>${j?.battery?.num_cells ?? 5}</strong>`);
         addRow(tbody, 'Current Measurement', j?.battery?.current_enable !== false
           ? '<strong style="color:green;">Enabled</strong>'
@@ -95,8 +99,8 @@
         addRow(tbody, 'Pack Voltage Min', `${fmt2(j?.battery?.pack_v_min)} <span class="value-unit">V</span>`);
         addRow(tbody, 'Pack Voltage Max', `${fmt2(j?.battery?.pack_v_max)} <span class="value-unit">V</span>`);
         if (j?.battery?.current_enable !== false) {
-          addRow(tbody, 'Current Min', `${fmt2(j?.battery?.current_min)} <span class="value-unit">A</span>`);
-          addRow(tbody, 'Current Max', `${fmt2(j?.battery?.current_max)} <span class="value-unit">A</span>`);
+          addRow(tbody, 'Current Min', `${fmt2(j?.battery?.series_pack_i_min)} <span class="value-unit">A</span>`);
+          addRow(tbody, 'Current Max', `${fmt2(j?.battery?.series_pack_i_max)} <span class="value-unit">A</span>`);
         }
 
         loadingMsg.style.display = 'none';

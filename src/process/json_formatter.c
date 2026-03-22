@@ -111,8 +111,8 @@ int bms_stats_to_json(const bms_stats_t *st, char *buf, size_t buf_size)
         g_cfg.battery.cell_v_min, g_cfg.battery.cell_v_max);
     if (g_cfg.battery.current_enable) {
         JSON_APPEND(off, buf, buf_size,
-            ",\"current_min\":%.3f,\"current_max\":%.3f",
-            g_cfg.battery.current_min, g_cfg.battery.current_max);
+            ",\"series_pack_i_min\":%.3f,\"series_pack_i_max\":%.3f",
+            g_cfg.battery.series_pack_i_min, g_cfg.battery.series_pack_i_max);
     }
     JSON_APPEND(off, buf, buf_size, "}");
 
@@ -132,6 +132,13 @@ int bms_stats_to_json(const bms_stats_t *st, char *buf, size_t buf_size)
             (unsigned)esp_telem.free_heap,
             (unsigned)esp_telem.min_free_heap,
             (unsigned)esp_telem.reset_reason);
+
+        // Include last error messages if reset was caused by TWDT
+        if (esp_telem.reset_msg[0] != '\0') {
+            JSON_APPEND(off, buf, buf_size,
+                ",\"reset_msg\":\"%s\"",
+                esp_telem.reset_msg);
+        }
         
         if (ltc_status.valid) {
             JSON_APPEND(off, buf, buf_size,

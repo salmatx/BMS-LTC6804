@@ -14,7 +14,7 @@
 /*                                               Public Macros                                                  */
 /*==============================================================================================================*/
 /// Maximum length of JSON string for one statistics window.
-#define BMS_STATS_JSON_MAXLEN      768u
+#define BMS_STATS_JSON_MAXLEN      1536u
 
 /*==============================================================================================================*/
 /*                                               Public Types                                                   */

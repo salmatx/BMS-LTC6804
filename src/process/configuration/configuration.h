@@ -42,10 +42,10 @@ esp_err_t configuration_save(const char *path);
 const char *configuration_get_battery_templates_json(void);
 esp_err_t configuration_add_battery_template(const char *id, const char *name, const char *category,
                                               float cell_v_min, float cell_v_max,
-                                              float current_min, float current_max);
+                                              float series_pack_i_min, float series_pack_i_max);
 esp_err_t configuration_edit_battery_template(const char *id, const char *name, const char *category,
                                               float cell_v_min, float cell_v_max,
-                                              float current_min, float current_max);
+                                              float series_pack_i_min, float series_pack_i_max);
 esp_err_t configuration_delete_battery_template(const char *id);
 
 /*==============================================================================================================*/

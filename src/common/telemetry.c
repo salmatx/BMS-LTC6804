@@ -11,6 +11,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <string.h>
+#include <stdio.h>
 
 /*==============================================================================================================*/
 /*                                             Private Macros                                                   */
@@ -46,6 +47,8 @@ static uint32_t s_last_idle_runtime = 0;
 static ltc6804_status_t s_ltc_status = {0};
 /// Spinlock for protecting LTC6804 status access across cores
 static portMUX_TYPE s_ltc_status_lock = portMUX_INITIALIZER_UNLOCKED;
+/// Cached reset message (populated once at boot)
+static char s_reset_msg[RESET_MSG_MAXLEN] = {0};
 
 /*==============================================================================================================*/
 /*                                      Public Variables and Constants                                          */
@@ -80,6 +83,25 @@ void telemetry_init(void)
     BMS_LOGW("Enable CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS in menuconfig");
     #endif
     
+    // If last reset was caused by Task Watchdog, retrieve last 5 error log entries from RTC memory
+    if (esp_reset_reason() == ESP_RST_TASK_WDT) {
+        char entries[BMS_LOG_ENTRY_COUNT][BMS_LOG_ENTRY_MAXLEN];
+        int entry_count = 0;
+        bms_log_rtc_get_entries(entries, &entry_count);
+
+        size_t off = 0;
+        for (int i = 0; i < entry_count; i++) {
+            int written = snprintf(s_reset_msg + off, sizeof(s_reset_msg) - off,
+                                   "%s%s", (i > 0) ? " | " : "", entries[i]);
+            if (written < 0 || off + (size_t)written >= sizeof(s_reset_msg)) break;
+            off += (size_t)written;
+        }
+    }
+    // For other reset reasons, s_reset_msg stays empty (all zeros from static init)
+
+    // Clear RTC log buffer after reading so next boot starts fresh
+    bms_log_rtc_clear();
+
     BMS_LOGI("Telemetry initialized: ID=%s, SW=%s", s_device_id, s_sw_version);
 }
 
@@ -124,6 +146,7 @@ void telemetry_get_esp32_telemetry(esp32_telemetry_t *telem)
     telem->free_heap = esp_get_free_heap_size();
     telem->min_free_heap = esp_get_minimum_free_heap_size();
     telem->reset_reason = (uint8_t)esp_reset_reason();
+    snprintf(telem->reset_msg, sizeof(telem->reset_msg), "%s", s_reset_msg);
 }
 
 /// Get LTC6804 status registers. Returns cached status updated by telemetry_update_ltc6804_status().

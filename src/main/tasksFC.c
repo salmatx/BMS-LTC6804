@@ -11,6 +11,7 @@
 #include "watchdog.h"
 #include "bms_adapter.h"
 #include "bms_data.h"
+#include "configuration.h"
 #include "intercore_comm.h"
 #include "ltc6804.h"
 #include "telemetry.h"
@@ -78,14 +79,14 @@ esp_err_t fast_core_tasks_create(void)
     BaseType_t result;
 
     // Create Fast Core processing task. Higher priority than Fast Core feeder to ensure real-time processing.
-    result = xTaskCreatePinnedToCore(fast_core_task, "fast_core_task", 4096, NULL, 7, &s_fast_core_task_handle, 1);
+    result = xTaskCreatePinnedToCore(fast_core_task, "fast_core_task", 5120, NULL, 7, &s_fast_core_task_handle, 1);
     if (result != pdPASS) {
         BMS_LOGE("Failed to create Fast Core processing task");
         return ESP_FAIL;
     }
 
     // Create Fast Core TWDT feeder task. Lower priority than Fast Core processing to ensure processing runs.
-    result = xTaskCreatePinnedToCore(fast_core_feeder_task, "fast_core_feeder_task", 2048, NULL, 6, &s_fast_core_feeder_handle, 1);
+    result = xTaskCreatePinnedToCore(fast_core_feeder_task, "fast_core_feeder_task", 3072, NULL, 6, &s_fast_core_feeder_handle, 1);
     if (result != pdPASS) {
         BMS_LOGE("Failed to create Fast Core feeder task");
         return ESP_FAIL;
@@ -188,11 +189,14 @@ static void fast_core_task()
         }
 
         // Periodically read LTC6804 status registers and update telemetry cache
-        if (++status_counter >= STATUS_READ_INTERVAL) {
-            status_counter = 0;
-            uint8_t stata[6] = {0}, statb[6] = {0};
-            esp_err_t status_ret = ltc6804_read_status(stata, statb);
-            telemetry_update_ltc6804_status(stata, statb, (status_ret == ESP_OK));
+        // (only when using hardware adapter — demo adapter has no SPI device)
+        if (g_cfg.battery.adapter_mode == BMS_ADAPTER_LTC6804) {
+            if (++status_counter >= STATUS_READ_INTERVAL) {
+                status_counter = 0;
+                uint8_t stata[6] = {0}, statb[6] = {0};
+                esp_err_t status_ret = ltc6804_read_status(stata, statb);
+                telemetry_update_ltc6804_status(stata, statb, (status_ret == ESP_OK));
+            }
         }
 
         // End timing and check for real-time overrun

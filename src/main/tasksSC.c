@@ -74,7 +74,7 @@ esp_err_t slow_core_task_create(void)
     BaseType_t result;
 
     // Create Slow Core task. Lower priority than Slow Core feeder to ensure feeder runs.
-    result = xTaskCreatePinnedToCore(slow_core_task, "slow_core_task", 4096, NULL, 4, NULL, 0);
+    result = xTaskCreatePinnedToCore(slow_core_task, "slow_core_task", 6144, NULL, 4, NULL, 0);
     if (result != pdPASS) {
         BMS_LOGE("Failed to create Slow Core task");
         return ESP_FAIL;
@@ -92,7 +92,7 @@ esp_err_t slow_core_TWDT_create(void)
     BaseType_t result;
 
     // Create Slow Core TWDT feeder task. Higher priority than Slow Core task to ensure feeder runs.
-    result = xTaskCreatePinnedToCore(slow_core_feeder_task, "slow_core_feeder_task", 2048, NULL, 5, &s_slow_core_feeder_handle, 0);
+    result = xTaskCreatePinnedToCore(slow_core_feeder_task, "slow_core_feeder_task", 3072, NULL, 5, &s_slow_core_feeder_handle, 0);
     if (result != pdPASS) {
         BMS_LOGE("Failed to create Slow Core feeder task");
         return ESP_FAIL;
@@ -153,6 +153,9 @@ static void slow_core_task()
     TickType_t start;
     TickType_t end;
 
+    // Previous wake time for absolute periodic delay (ensures 1 s period regardless of processing time)
+    TickType_t last_wake = xTaskGetTickCount();
+
     // Main Slow Core loop
     while (1)
     {
@@ -169,8 +172,8 @@ static void slow_core_task()
             s_allow_feeding = false;
         }
 
-        // Puts task into blocked state for defined period
-        vTaskDelay(sw_check_ticks);
+        // Puts task into blocked state until next absolute period (prevents timing drift from processing overhead)
+        vTaskDelayUntil(&last_wake, sw_check_ticks);
     }
 }
 

@@ -10,13 +10,21 @@
 /*==============================================================================================================*/
 /*                                               Public Macros                                                  */
 /*==============================================================================================================*/
+/// Maximum length of a single error log entry stored in RTC memory
+#define BMS_LOG_ENTRY_MAXLEN  128
+/// Number of error log entries stored in RTC ring buffer
+#define BMS_LOG_ENTRY_COUNT   5
+
 /// Deffault log module tag. Can be overridden by defining LOG_MODULE_TAG after including this header.
 #ifndef LOG_MODULE_TAG
 #define LOG_MODULE_TAG "BMS"
 #endif
 
-/// Error log macro used to print error messages to stdout.
-#define BMS_LOGE(fmt, ...) ESP_LOGE(LOG_MODULE_TAG, fmt, ##__VA_ARGS__)
+/// Error log macro used to print error messages to stdout and store in RTC ring buffer.
+#define BMS_LOGE(fmt, ...) do { \
+    ESP_LOGE(LOG_MODULE_TAG, fmt, ##__VA_ARGS__); \
+    bms_log_rtc_store(LOG_MODULE_TAG, fmt, ##__VA_ARGS__); \
+} while(0)
 /// Warning log macro used to print warning messages to stdout.
 #define BMS_LOGW(fmt, ...) ESP_LOGW(LOG_MODULE_TAG, fmt, ##__VA_ARGS__)
 /// Info log macro used to print informational messages to stdout.
@@ -58,6 +66,11 @@
 // Initialization API
 void bms_logging_init(void);
 void bms_logging_set_global_level(esp_log_level_t level);
+
+// RTC error log ring buffer
+void bms_log_rtc_store(const char *tag, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
+void bms_log_rtc_get_entries(char out[][BMS_LOG_ENTRY_MAXLEN], int *count);
+void bms_log_rtc_clear(void);
 void bms_logging_set_module_level(const char *module_tag, esp_log_level_t level);
 
 /*==============================================================================================================*/

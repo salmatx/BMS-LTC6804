@@ -311,14 +311,16 @@ static esp_err_t h_config_data(httpd_req_t *req)
     cJSON_AddStringToObject(mqtt, "uri", g_cfg.mqtt.uri);
 
     cJSON_AddItemToObject(root, "battery", bat);
+    cJSON_AddStringToObject(bat, "adapter",
+        g_cfg.battery.adapter_mode == BMS_ADAPTER_DEMO ? "demo" : "ltc6804");
     cJSON_AddNumberToObject(bat, "num_cells", g_cfg.battery.num_cells);
     cJSON_AddBoolToObject(bat, "current_enable", g_cfg.battery.current_enable);
     cJSON_AddNumberToObject(bat, "cell_v_min", g_cfg.battery.cell_v_min);
     cJSON_AddNumberToObject(bat, "cell_v_max", g_cfg.battery.cell_v_max);
     cJSON_AddNumberToObject(bat, "pack_v_min", g_cfg.battery.pack_v_min);
     cJSON_AddNumberToObject(bat, "pack_v_max", g_cfg.battery.pack_v_max);
-    cJSON_AddNumberToObject(bat, "current_min", g_cfg.battery.current_min);
-    cJSON_AddNumberToObject(bat, "current_max", g_cfg.battery.current_max);
+    cJSON_AddNumberToObject(bat, "series_pack_i_min", g_cfg.battery.series_pack_i_min);
+    cJSON_AddNumberToObject(bat, "series_pack_i_max", g_cfg.battery.series_pack_i_max);
 
     char *out = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
@@ -430,6 +432,15 @@ static esp_err_t h_config_save(httpd_req_t *req)
         g_cfg.mqtt.uri[sizeof(g_cfg.mqtt.uri) - 1] = '\0';
     }
     
+    // Parse adapter mode
+    if (parse_post_param(buf, "adapter", value, sizeof(value)) == ESP_OK) {
+        if (strcmp(value, "demo") == 0) {
+            g_cfg.battery.adapter_mode = BMS_ADAPTER_DEMO;
+        } else {
+            g_cfg.battery.adapter_mode = BMS_ADAPTER_LTC6804;
+        }
+    }
+
     // Parse battery parameters and round to 2 decimal places
     if (parse_post_param(buf, "num_cells", value, sizeof(value)) == ESP_OK) {
         int nc = atoi(value);
@@ -455,11 +466,11 @@ static esp_err_t h_config_save(httpd_req_t *req)
     if (parse_post_param(buf, "pack_v_max", value, sizeof(value)) == ESP_OK) {
         g_cfg.battery.pack_v_max = roundf(atof(value) * 100.0f) / 100.0f;
     }
-    if (parse_post_param(buf, "current_min", value, sizeof(value)) == ESP_OK) {
-        g_cfg.battery.current_min = roundf(atof(value) * 100.0f) / 100.0f;
+    if (parse_post_param(buf, "series_pack_i_min", value, sizeof(value)) == ESP_OK) {
+        g_cfg.battery.series_pack_i_min = roundf(atof(value) * 100.0f) / 100.0f;
     }
-    if (parse_post_param(buf, "current_max", value, sizeof(value)) == ESP_OK) {
-        g_cfg.battery.current_max = roundf(atof(value) * 100.0f) / 100.0f;
+    if (parse_post_param(buf, "series_pack_i_max", value, sizeof(value)) == ESP_OK) {
+        g_cfg.battery.series_pack_i_max = roundf(atof(value) * 100.0f) / 100.0f;
     }
     
     // Save configuration to file
@@ -579,12 +590,12 @@ static esp_err_t h_template_save(httpd_req_t *req)
         return httpd_resp_sendstr(req, "{\"ok\":false,\"error\":\"Missing required fields\"}");
     }
 
-    float cell_v_min  = 0, cell_v_max = 0, current_min = 0, current_max = 0;
+    float cell_v_min  = 0, cell_v_max = 0, series_pack_i_min = 0, series_pack_i_max = 0;
     cJSON *jval;
     jval = cJSON_GetObjectItem(body, "cell_v_min");  if (cJSON_IsNumber(jval)) cell_v_min  = (float)jval->valuedouble;
     jval = cJSON_GetObjectItem(body, "cell_v_max");  if (cJSON_IsNumber(jval)) cell_v_max  = (float)jval->valuedouble;
-    jval = cJSON_GetObjectItem(body, "current_min"); if (cJSON_IsNumber(jval)) current_min = (float)jval->valuedouble;
-    jval = cJSON_GetObjectItem(body, "current_max"); if (cJSON_IsNumber(jval)) current_max = (float)jval->valuedouble;
+    jval = cJSON_GetObjectItem(body, "series_pack_i_min"); if (cJSON_IsNumber(jval)) series_pack_i_min = (float)jval->valuedouble;
+    jval = cJSON_GetObjectItem(body, "series_pack_i_max"); if (cJSON_IsNumber(jval)) series_pack_i_max = (float)jval->valuedouble;
 
     // Copy strings before freeing body to reduce peak heap usage during save
     char id_buf[64] = {0}, name_buf[64] = {0}, cat_buf[64] = {0};
@@ -595,7 +606,7 @@ static esp_err_t h_template_save(httpd_req_t *req)
 
     esp_err_t err = configuration_add_battery_template(
         id_buf, name_buf, cat_buf,
-        cell_v_min, cell_v_max, current_min, current_max);
+        cell_v_min, cell_v_max, series_pack_i_min, series_pack_i_max);
 
     httpd_resp_set_type(req, "application/json");
     if (err == ESP_OK) {
@@ -646,12 +657,12 @@ static esp_err_t h_template_edit(httpd_req_t *req)
         return httpd_resp_sendstr(req, "{\"ok\":false,\"error\":\"Missing required fields\"}");
     }
 
-    float cell_v_min = 0, cell_v_max = 0, current_min = 0, current_max = 0;
+    float cell_v_min = 0, cell_v_max = 0, series_pack_i_min = 0, series_pack_i_max = 0;
     cJSON *jval;
     jval = cJSON_GetObjectItem(body, "cell_v_min");  if (cJSON_IsNumber(jval)) cell_v_min  = (float)jval->valuedouble;
     jval = cJSON_GetObjectItem(body, "cell_v_max");  if (cJSON_IsNumber(jval)) cell_v_max  = (float)jval->valuedouble;
-    jval = cJSON_GetObjectItem(body, "current_min"); if (cJSON_IsNumber(jval)) current_min = (float)jval->valuedouble;
-    jval = cJSON_GetObjectItem(body, "current_max"); if (cJSON_IsNumber(jval)) current_max = (float)jval->valuedouble;
+    jval = cJSON_GetObjectItem(body, "series_pack_i_min"); if (cJSON_IsNumber(jval)) series_pack_i_min = (float)jval->valuedouble;
+    jval = cJSON_GetObjectItem(body, "series_pack_i_max"); if (cJSON_IsNumber(jval)) series_pack_i_max = (float)jval->valuedouble;
 
     char id_buf[64] = {0}, name_buf[64] = {0}, cat_buf[64] = {0};
     strncpy(id_buf,   jid->valuestring,   sizeof(id_buf) - 1);
@@ -661,7 +672,7 @@ static esp_err_t h_template_edit(httpd_req_t *req)
 
     esp_err_t err = configuration_edit_battery_template(
         id_buf, name_buf, cat_buf,
-        cell_v_min, cell_v_max, current_min, current_max);
+        cell_v_min, cell_v_max, series_pack_i_min, series_pack_i_max);
 
     httpd_resp_set_type(req, "application/json");
     if (err == ESP_OK) {

@@ -61,14 +61,15 @@ configuration_t g_cfg = {
         .uri  = CONFIG_BMS_MQTT_BROKER_URI,
     },
     .battery = {
+        .adapter_mode   = BMS_ADAPTER_LTC6804,
         .num_cells      = 5,
         .current_enable = false,
         .cell_v_min     = 0.5f,
         .cell_v_max     = 2.0f,
         .pack_v_min     = 2.5f,
         .pack_v_max     = 10.0f,
-        .current_min    = -5.0f,
-        .current_max    = 5.0f
+        .series_pack_i_min    = 1.0f,
+        .series_pack_i_max    = 5.0f
     }
 };
 
@@ -132,6 +133,15 @@ esp_err_t configuration_load(const char *path)
 
     cJSON *jbatt = cJSON_GetObjectItem(root, "battery");
     if (cJSON_IsObject(jbatt)) {
+        // Load adapter mode (default: ltc6804)
+        char adapter_str[16] = "";
+        json_get_str(jbatt, "adapter", adapter_str, sizeof(adapter_str));
+        if (strcmp(adapter_str, "demo") == 0) {
+            g_cfg.battery.adapter_mode = BMS_ADAPTER_DEMO;
+        } else {
+            g_cfg.battery.adapter_mode = BMS_ADAPTER_LTC6804;
+        }
+
         int num_cells = (int)g_cfg.battery.num_cells;
         json_get_int(jbatt, "num_cells", &num_cells);
         if (num_cells < 1) num_cells = 1;
@@ -142,8 +152,8 @@ esp_err_t configuration_load(const char *path)
         json_get_float(jbatt, "cell_v_max",  &g_cfg.battery.cell_v_max);
         json_get_float(jbatt, "pack_v_min",  &g_cfg.battery.pack_v_min);
         json_get_float(jbatt, "pack_v_max",  &g_cfg.battery.pack_v_max);
-        json_get_float(jbatt, "current_min", &g_cfg.battery.current_min);
-        json_get_float(jbatt, "current_max", &g_cfg.battery.current_max);
+        json_get_float(jbatt, "series_pack_i_min", &g_cfg.battery.series_pack_i_min);
+        json_get_float(jbatt, "series_pack_i_max", &g_cfg.battery.series_pack_i_max);
     }
 
     // Cache battery_templates JSON for later use (web UI and re-saving)
@@ -187,14 +197,16 @@ esp_err_t configuration_save(const char *path)
 
     // Battery configuration
     cJSON *jbatt = cJSON_CreateObject();
+    cJSON_AddStringToObject(jbatt, "adapter",
+        g_cfg.battery.adapter_mode == BMS_ADAPTER_DEMO ? "demo" : "ltc6804");
     cJSON_AddNumberToObject(jbatt, "num_cells", g_cfg.battery.num_cells);
     cJSON_AddBoolToObject(jbatt, "current_enable", g_cfg.battery.current_enable);
     cJSON_AddNumberToObject(jbatt, "cell_v_min", g_cfg.battery.cell_v_min);
     cJSON_AddNumberToObject(jbatt, "cell_v_max", g_cfg.battery.cell_v_max);
     cJSON_AddNumberToObject(jbatt, "pack_v_min", g_cfg.battery.pack_v_min);
     cJSON_AddNumberToObject(jbatt, "pack_v_max", g_cfg.battery.pack_v_max);
-    cJSON_AddNumberToObject(jbatt, "current_min", g_cfg.battery.current_min);
-    cJSON_AddNumberToObject(jbatt, "current_max", g_cfg.battery.current_max);
+    cJSON_AddNumberToObject(jbatt, "series_pack_i_min", g_cfg.battery.series_pack_i_min);
+    cJSON_AddNumberToObject(jbatt, "series_pack_i_max", g_cfg.battery.series_pack_i_max);
     cJSON_AddItemToObject(root, "battery", jbatt);
 
     // Re-attach battery_templates if previously loaded
@@ -255,12 +267,12 @@ const char *configuration_get_battery_templates_json(void)
 /// \param category  Group label (e.g. "Li-ion NMC/NCA")
 /// \param cell_v_min  Minimum cell voltage
 /// \param cell_v_max  Maximum cell voltage
-/// \param current_min Minimum current (discharge, negative)
-/// \param current_max Maximum current (charge, positive)
+/// \param series_pack_i_min Minimum current (discharge, negative)
+/// \param series_pack_i_max Maximum current (charge, positive)
 /// \return ESP_OK on success, otherwise an error code
 esp_err_t configuration_add_battery_template(const char *id, const char *name, const char *category,
                                               float cell_v_min, float cell_v_max,
-                                              float current_min, float current_max)
+                                              float series_pack_i_min, float series_pack_i_max)
 {
     // Parse existing templates or create empty array
     cJSON *templates = NULL;
@@ -296,8 +308,8 @@ esp_err_t configuration_add_battery_template(const char *id, const char *name, c
     cJSON_AddStringToObject(battery, "name", name);
     cJSON_AddNumberToObject(battery, "cell_v_min", cell_v_min);
     cJSON_AddNumberToObject(battery, "cell_v_max", cell_v_max);
-    cJSON_AddNumberToObject(battery, "current_min", current_min);
-    cJSON_AddNumberToObject(battery, "current_max", current_max);
+    cJSON_AddNumberToObject(battery, "series_pack_i_min", series_pack_i_min);
+    cJSON_AddNumberToObject(battery, "series_pack_i_max", series_pack_i_max);
 
     cJSON *batteries_arr = cJSON_GetObjectItem(target_group, "batteries");
     if (!cJSON_IsArray(batteries_arr)) {
@@ -332,12 +344,12 @@ esp_err_t configuration_add_battery_template(const char *id, const char *name, c
 /// \param category  Group label (may differ from original to move between groups)
 /// \param cell_v_min  Minimum cell voltage
 /// \param cell_v_max  Maximum cell voltage
-/// \param current_min Minimum current
-/// \param current_max Maximum current
+/// \param series_pack_i_min Minimum current
+/// \param series_pack_i_max Maximum current
 /// \return ESP_OK on success, otherwise an error code
 esp_err_t configuration_edit_battery_template(const char *id, const char *name, const char *category,
                                               float cell_v_min, float cell_v_max,
-                                              float current_min, float current_max)
+                                              float series_pack_i_min, float series_pack_i_max)
 {
     cJSON *templates = NULL;
     if (s_battery_templates_json) {
@@ -396,7 +408,7 @@ esp_err_t configuration_edit_battery_template(const char *id, const char *name, 
     // Add updated entry (reuses existing add logic which also saves to file)
     ESP_LOGI(LOG_MODULE_TAG, "Editing template '%s' in group '%s'", name, category);
     return configuration_add_battery_template(id, name, category,
-                                               cell_v_min, cell_v_max, current_min, current_max);
+                                               cell_v_min, cell_v_max, series_pack_i_min, series_pack_i_max);
 }
 
 /// This function removes a battery template by its id from the cached templates and saves to config file.

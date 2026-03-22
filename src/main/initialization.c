@@ -11,6 +11,7 @@
 #include "tasksSC.h"
 #include "tasksFC.h"
 #include "bms_adapter.h"
+#include "configuration.h"
 #include "intercore_comm.h"
 #include "logging.h"
 #include "wifi.h"
@@ -111,8 +112,12 @@ bool initialization_exec(void)
         return false;
     }
 
-    // Select and initialize BMS adapter
-    err = bms_ltc6804_adapter_select();
+    // Select and initialize BMS adapter based on configuration
+    if (g_cfg.battery.adapter_mode == BMS_ADAPTER_DEMO) {
+        err = bms_demo_adapter_select();
+    } else {
+        err = bms_ltc6804_adapter_select();
+    }
     if (err != ESP_OK) {
         BMS_LOGE("BMS adapter init failed: %s", esp_err_to_name(err));
         return false;

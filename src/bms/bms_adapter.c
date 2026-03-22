@@ -141,11 +141,9 @@ static esp_err_t demo_init(void)
     return ESP_OK;
 }
 
-/* Generate one demo sample with random cells and occasional under/over-voltage */
-/// This function reads one demo BMS sample. Current implementation generates random per-cell voltages
-/// within configured limits, with occasional under-voltage and over-voltage events. Pack current is
-/// also generated randomly within configured limits. In future implementation, this function will read real data
-/// from BMS.
+/// This function reads one demo BMS sample. Generates random per-cell voltages in range
+/// [cell_v_min * 0.8, cell_v_max * 1.2] (80%-120% of configured limits) and random pack current
+/// in range [series_pack_i_min * 1.2, series_pack_i_max * 1.2] so values can occasionally exceed thresholds.
 ///
 /// \param out Pointer to output sample structure
 /// \return ESP_OK on success, otherwise an error code
@@ -155,44 +153,29 @@ static esp_err_t demo_read_sample(bms_sample_t *out)
         return ESP_ERR_INVALID_ARG;
     }
 
-    // Probabilities of under-voltage event.
-    const float p_underv = 0.02f;
-    // Probability of over-voltage event.
-    const float p_overv  = 0.02f;
+    // Extend configured limits by 20% to allow threshold crossings
+    const float v_lo = g_cfg.battery.cell_v_min * 0.8f;
+    const float v_hi = g_cfg.battery.cell_v_max * 1.2f;
 
-    // Voltage of whole battery pack
     float pack_v = 0.0f;
 
     for (int i = 0; i < g_cfg.battery.num_cells; ++i) {
-        // Generate voltage withing configured min/max limits
-        float r = demo_rand01();
-        float v = g_cfg.battery.cell_v_min + r * (g_cfg.battery.cell_v_max - g_cfg.battery.cell_v_min);
-
-        // Generates under-voltage or over-voltage based on defined probabilities
-        float e = demo_rand01();
-        if (e < p_underv) {
-            float drop = 0.1f + demo_rand01() * 0.2f;  // 0.1–0.3 V down
-            v -= drop;
-        } else if (e > 1.0f - p_overv) {
-            float raise = 0.1f + demo_rand01() * 0.2f; // 0.1–0.3 V up
-            v += raise;
-        }
-
+        float v = v_lo + demo_rand01() * (v_hi - v_lo);
         out->cell_v[i] = v;
         pack_v += v;
     }
 
     out->pack_v = pack_v;
 
-    // Generate random pack current within configured min/max limits (only if current measurement enabled)
+    // Generate random pack current (only if current measurement enabled)
     if (g_cfg.battery.current_enable) {
-        float ir = demo_rand01();
-        out->pack_i = g_cfg.battery.current_min + ir * (g_cfg.battery.current_max - g_cfg.battery.current_min);
+        float i_lo = g_cfg.battery.series_pack_i_min * 0.8f;
+        float i_hi = g_cfg.battery.series_pack_i_max * 1.2f;
+        out->pack_i = i_lo + demo_rand01() * (i_hi - i_lo);
     } else {
         out->pack_i = 0.0f;
     }
 
-    // Set timestamp
     out->timestamp = xTaskGetTickCount();
 
     return ESP_OK;

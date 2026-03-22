@@ -198,11 +198,11 @@ static void check_limits_sample(const bms_sample_t *s, bms_stats_t *flags)
     }
 
     if (g_cfg.battery.current_enable) {
-        if (s->pack_i < g_cfg.battery.current_min) {
+        if (s->pack_i < g_cfg.battery.series_pack_i_min) {
             // Undercurrent bit
             flags->cell_errors |= (1u << 25);
         }
-        if (s->pack_i > g_cfg.battery.current_max) {
+        if (s->pack_i > g_cfg.battery.series_pack_i_max) {
             // Overcurrent bit
             flags->cell_errors |= (1u << 26);
         }

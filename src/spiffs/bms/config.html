@@ -58,6 +58,20 @@
 
       <!-- Battery Configuration -->
       <h2>Battery Settings</h2>
+
+      <!-- Adapter Selection -->
+      <div class="form-group">
+        <label>BMS Adapter:</label>
+        <div style="display:flex;align-items:center;gap:16px;margin-top:4px;">
+          <label style="cursor:pointer;font-size:0.95em;">
+            <input type="radio" id="adapter_ltc6804" name="adapter" value="ltc6804" style="width:auto;margin-right:4px;" checked>LTC6804 (hardware)
+          </label>
+          <label style="cursor:pointer;font-size:0.95em;">
+            <input type="radio" id="adapter_demo" name="adapter" value="demo" style="width:auto;margin-right:4px;">Demo (random data)
+          </label>
+        </div>
+      </div>
+
       <div class="grid">
         <div class="form-group">
           <label for="num_cells">Number of Cells:</label>
@@ -132,12 +146,12 @@
       <h3>Current Thresholds</h3>
       <div class="grid">
         <div class="form-group">
-          <label for="current_min">Cell Min Current (A):</label>
-          <input type="number" id="current_min" name="current_min" step="0.1" min="-5000" max="0" disabled required>
+          <label for="series_pack_i_min">Cell Min Current (A):</label>
+          <input type="number" id="series_pack_i_min" name="series_pack_i_min" step="0.1" min="-5000" max="0" disabled required>
         </div>
         <div class="form-group">
-          <label for="current_max">Cell Max Current (A):</label>
-          <input type="number" id="current_max" name="current_max" step="0.1" min="0" max="5000" disabled required>
+          <label for="series_pack_i_max">Cell Max Current (A):</label>
+          <input type="number" id="series_pack_i_max" name="series_pack_i_max" step="0.1" min="0" max="5000" disabled required>
         </div>
       </div>
 
@@ -161,7 +175,7 @@
 
   <script>
     // Field IDs for battery parameters (voltage + current)
-    var BATT_FIELDS = ['cell_v_min', 'cell_v_max', 'pack_v_min', 'pack_v_max', 'current_min', 'current_max'];
+    var BATT_FIELDS = ['cell_v_min', 'cell_v_max', 'pack_v_min', 'pack_v_max', 'series_pack_i_min', 'series_pack_i_max'];
     var customMode = false;
 
     function toggleNoPass(checked) {
@@ -196,8 +210,8 @@
       if (!tpl) return;
       document.getElementById('cell_v_min').value = fmt2(tpl.cell_v_min);
       document.getElementById('cell_v_max').value = fmt2(tpl.cell_v_max);
-      document.getElementById('current_min').value = fmt2(tpl.current_min);
-      document.getElementById('current_max').value = fmt2(tpl.current_max);
+      document.getElementById('series_pack_i_min').value = fmt2(tpl.current_min);
+      document.getElementById('series_pack_i_max').value = fmt2(tpl.current_max);
       updatePackVoltages();
     }
 
@@ -276,8 +290,8 @@
               var matched = '';
               var cvMin = parseFloat(fmt2(data.battery.cell_v_min));
               var cvMax = parseFloat(fmt2(data.battery.cell_v_max));
-              var cMin  = parseFloat(fmt2(data.battery.current_min));
-              var cMax  = parseFloat(fmt2(data.battery.current_max));
+              var cMin  = parseFloat(fmt2(data.battery.series_pack_i_min));
+              var cMax  = parseFloat(fmt2(data.battery.series_pack_i_max));
               for (var key in BATTERIES) {
                 var t = BATTERIES[key];
                 if (Math.abs(t.cell_v_min - cvMin) < 0.005 &&
@@ -304,13 +318,19 @@
           document.getElementById('wifi_netmask').value = data.wifi.netmask || '';
           document.getElementById('mqtt_uri').value = data.mqtt.uri || '';
           document.getElementById('num_cells').value = data.battery.num_cells || 5;
+          // Set adapter radio button
+          if (data.battery.adapter === 'demo') {
+            document.getElementById('adapter_demo').checked = true;
+          } else {
+            document.getElementById('adapter_ltc6804').checked = true;
+          }
           document.getElementById('current_enable').checked = data.battery.current_enable !== false;
           document.getElementById('cell_v_min').value = fmt2(data.battery.cell_v_min) || '2.80';
           document.getElementById('cell_v_max').value = fmt2(data.battery.cell_v_max) || '4.20';
           document.getElementById('pack_v_min').value = fmt2(data.battery.pack_v_min) || '39.00';
           document.getElementById('pack_v_max').value = fmt2(data.battery.pack_v_max) || '58.80';
-          document.getElementById('current_min').value = fmt2(data.battery.current_min) || '-30.00';
-          document.getElementById('current_max').value = fmt2(data.battery.current_max) || '60.00';
+          document.getElementById('series_pack_i_min').value = fmt2(data.battery.series_pack_i_min) || '-30.00';
+          document.getElementById('series_pack_i_max').value = fmt2(data.battery.series_pack_i_max) || '60.00';
 
           // Fields start disabled (template mode)
           setBattFieldsDisabled(true);
@@ -452,8 +472,8 @@
         category:    category,
         cell_v_min:  parseFloat(document.getElementById('cell_v_min').value) || 0,
         cell_v_max:  parseFloat(document.getElementById('cell_v_max').value) || 0,
-        current_min: parseFloat(document.getElementById('current_min').value) || 0,
-        current_max: parseFloat(document.getElementById('current_max').value) || 0
+        current_min: parseFloat(document.getElementById('series_pack_i_min').value) || 0,
+        current_max: parseFloat(document.getElementById('series_pack_i_max').value) || 0
       };
 
       fetch('/bms/config/template/edit', {
@@ -518,8 +538,8 @@
         category:    category,
         cell_v_min:  parseFloat(document.getElementById('cell_v_min').value) || 0,
         cell_v_max:  parseFloat(document.getElementById('cell_v_max').value) || 0,
-        current_min: parseFloat(document.getElementById('current_min').value) || 0,
-        current_max: parseFloat(document.getElementById('current_max').value) || 0
+        current_min: parseFloat(document.getElementById('series_pack_i_min').value) || 0,
+        current_max: parseFloat(document.getElementById('series_pack_i_max').value) || 0
       };
 
       fetch('/bms/config/template/save', {

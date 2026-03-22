@@ -17,6 +17,9 @@
 /*==============================================================================================================*/
 /*                                               Public Types                                                   */
 /*==============================================================================================================*/
+/// Maximum length of reset message string in telemetry
+#define RESET_MSG_MAXLEN 700
+
 /// Structure containing ESP32 system telemetry data
 typedef struct {
     char device_id[18];         ///< Device unique ID (MAC address as string)
@@ -25,6 +28,7 @@ typedef struct {
     uint32_t free_heap;         ///< Free heap memory in bytes
     uint32_t min_free_heap;     ///< Minimum free heap since boot in bytes
     uint8_t reset_reason;       ///< Last reset reason (esp_reset_reason_t)
+    char reset_msg[RESET_MSG_MAXLEN]; ///< Last 5 error logs before TWDT reset (empty if other reset reason)
 } esp32_telemetry_t;
 
 /// Structure containing LTC6804 status registers (Table 43 & Table 44)
