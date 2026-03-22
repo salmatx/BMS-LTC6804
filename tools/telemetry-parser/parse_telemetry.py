@@ -75,6 +75,7 @@ def parse_row(row: dict) -> str:
     cell_flags = int(row["telemetry_ltc_cell_flags"])
     diag = int(row["telemetry_ltc_diag"])
     reset_reason = int(row["telemetry_reset_reason"])
+    reset_message = row["telemetry_reset_msg"]
 
     block = (
         f"Time: {time_str}\n"
@@ -87,6 +88,7 @@ def parse_row(row: dict) -> str:
         f"  Diagnostics (0x{diag:02X}):\n"
         f"{parse_diag(diag)}\n"
         f"  Reset Reason: {reset_reason} -> {parse_reset_reason(reset_reason)}\n"
+        f"  Reset Message: {reset_message}\n"
     )
     return block
 
