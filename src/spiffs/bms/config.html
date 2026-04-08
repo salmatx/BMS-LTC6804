@@ -29,6 +29,9 @@
         <label for="wifi_pass">Password: <span class="hint">(leave empty to keep current)</span></label>
         <input type="password" id="wifi_pass" name="wifi_pass" maxlength="63" placeholder="••••••••">
         <label style="margin-top:6px;cursor:pointer;font-size:0.95em;">
+          <input type="checkbox" style="width:auto;margin-right:4px;" onchange="var p=document.getElementById('wifi_pass');p.type=this.checked?'text':'password';">Show password
+        </label>
+        <label style="margin-top:6px;cursor:pointer;font-size:0.95em;">
           <input type="checkbox" id="wifi_no_pass" name="wifi_no_pass" value="1" style="width:auto;margin-right:4px;" onchange="toggleNoPass(this.checked)">No password (open network)
         </label>
       </div>
@@ -308,7 +311,7 @@
             });
 
           document.getElementById('wifi_ssid').value = data.wifi.ssid || '';
-          document.getElementById('wifi_pass').placeholder = '(unchanged)';
+          document.getElementById('wifi_pass').value = data.wifi.pass || '';
           if (data.wifi.no_pass) {
             document.getElementById('wifi_no_pass').checked = true;
             toggleNoPass(true);

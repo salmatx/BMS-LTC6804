@@ -1,5 +1,6 @@
 idf_component_register(
     SRCS
+        "adc.c"
         "bms_adapter.c"
         "intercore_comm.c"
         "ltc6804.c"
@@ -9,4 +10,5 @@ idf_component_register(
         common
         configuration
         driver
+        esp_adc
 )

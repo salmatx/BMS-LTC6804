@@ -176,6 +176,40 @@ static app_state_t state_config_handler(void)
 {
     app_state_t ret_state = APP_ST_CONFIG;
 
+    // Pop samples from inter-core queue into ring buffer
+    while (buf.count < buf.capacity) {
+        bms_sample_t sample;
+        if (!bms_queue_pop(&sample)) {
+            break;
+        }
+        size_t idx = bms_buf_index(&buf, buf.count);
+        buf.samples[idx] = sample;
+        buf.count++;
+    }
+
+    // Compute stats and push to HTTP history (no MQTT in CONFIG mode)
+    bms_stats_buffer_t stats_buf;
+    char json_buf[BMS_STATS_JSON_MAXLEN];
+
+    while (buf.count > 0) {
+        int used_samples = bms_compute_stats(&buf, &stats_buf);
+        if (used_samples <= 0) {
+            break;
+        }
+
+        for (size_t i = 0; i < stats_buf.stats_count; ++i) {
+            const bms_stats_t *st = &stats_buf.stats_array[i];
+            int len = bms_stats_to_json(st, json_buf, sizeof(json_buf));
+            if (len < 0) {
+                BMS_LOGE("Failed to serialize stats to JSON");
+                break;
+            }
+            bms_stats_hist_push(json_buf, (size_t)len);
+        }
+
+        remove_processed_samples(&buf, used_samples);
+    }
+
     vTaskDelay(pdMS_TO_TICKS(1000));
     return ret_state;
 }
@@ -193,7 +227,7 @@ static app_state_t state_init_handler(void)
     if (initialization_exec()) {
         ret_state = APP_ST_PROCESSING;
     } else {
-        BMS_LOGW("Invalid/missing config, entering CONFIG state");
+        BMS_LOGW("Initialization not completed, entering CONFIG state");
         ret_state = APP_ST_CONFIG;
     }
 
@@ -332,23 +366,19 @@ static void state_input_handler(void)
 
             case APP_ST_CONFIG:
                 BMS_LOGI("Entering CONFIG state");
-                
-                // Only clean up tasks if coming from PROCESSING state
-                // (tasks are not created when entering CONFIG from INIT due to AP mode)
+
+                // Allocate ring buffer for sample processing
+                buf.capacity = MAX_SAMPLES_PER_POP;
+                buf.head     = 0;
+                buf.count    = 0;
+                buf.samples  = malloc(sizeof(bms_sample_t) * buf.capacity);
+                if (!buf.samples) {
+                    BMS_LOGE("Failed to allocate samples buffer for CONFIG");
+                    vTaskDelete(NULL);
+                }
+
                 if (s_appsm.prev_state == APP_ST_PROCESSING) {
-                    BMS_LOGI("Cleaning up tasks and disabling watchdogs");
-                    
-                    // 1. Delete all Fast Core tasks (Core 1)
-                    fast_core_tasks_delete();
-                    
-                    // 2. Delete Slow Core feeder task
-                    slow_core_TWDT_delete();
-                    
-                    // 3. Give tasks time to clean up
-                    vTaskDelay(pdMS_TO_TICKS(100));
-                    
-                    // 4. Deinitialize TWDT (all tasks unregistered by now)
-                    bms_wdt_deinit();
+                    BMS_LOGI("Tasks and watchdogs remain active during CONFIG state");
                 } else {
                     BMS_LOGI("Entering CONFIG state from INIT (AP mode) - HTTP server active for configuration");
                 }
@@ -385,7 +415,8 @@ static void state_output_handler(void)
                 break;
 
             case APP_ST_CONFIG:
-                // Placeholder for configuration saving logic.
+                free(buf.samples);
+                buf.samples = NULL;
                 break;
 
             default:

@@ -54,6 +54,7 @@ static esp_err_t h_index(httpd_req_t *req);
 static esp_err_t h_stats_page(httpd_req_t *req);
 static esp_err_t h_config_page(httpd_req_t *req);
 static esp_err_t h_js_charts(httpd_req_t *req);
+static esp_err_t h_js_chartlib(httpd_req_t *req);
 static esp_err_t h_js_batteries(httpd_req_t *req);
 static esp_err_t h_css_style(httpd_req_t *req);
 static esp_err_t h_stats_data(httpd_req_t *req);
@@ -106,6 +107,7 @@ esp_err_t http_server_start(void)
     httpd_uri_t u_stats         = { .uri = "/bms/stats",            .method = HTTP_GET,  .handler = h_stats_page };
     httpd_uri_t u_cfg           = { .uri = "/bms/config",           .method = HTTP_GET,  .handler = h_config_page };
     httpd_uri_t u_js            = { .uri = "/bms/js/charts.js",     .method = HTTP_GET,  .handler = h_js_charts };
+    httpd_uri_t u_js_chartlib   = { .uri = "/bms/js/chart.min.js",   .method = HTTP_GET,  .handler = h_js_chartlib };
     httpd_uri_t u_js_batt       = { .uri = "/bms/js/batteries.js",   .method = HTTP_GET,  .handler = h_js_batteries };
     httpd_uri_t u_data          = { .uri = "/bms/stats/data",       .method = HTTP_GET,  .handler = h_stats_data };
     httpd_uri_t u_cfg_data      = { .uri = "/bms/config/data",      .method = HTTP_GET,  .handler = h_config_data };
@@ -125,6 +127,7 @@ esp_err_t http_server_start(void)
     httpd_register_uri_handler(s_httpd, &u_stats);
     httpd_register_uri_handler(s_httpd, &u_cfg);
     httpd_register_uri_handler(s_httpd, &u_js);
+    httpd_register_uri_handler(s_httpd, &u_js_chartlib);
     httpd_register_uri_handler(s_httpd, &u_js_batt);
     httpd_register_uri_handler(s_httpd, &u_data);
     httpd_register_uri_handler(s_httpd, &u_cfg_data);
@@ -302,6 +305,7 @@ static esp_err_t h_config_data(httpd_req_t *req)
 
     cJSON_AddItemToObject(root, "wifi", wifi);
     cJSON_AddStringToObject(wifi, "ssid", g_cfg.wifi.ssid);
+    cJSON_AddStringToObject(wifi, "pass", g_cfg.wifi.pass);
     cJSON_AddBoolToObject(wifi, "no_pass", g_cfg.wifi.pass[0] == '\0');
     cJSON_AddStringToObject(wifi, "static_ip", g_cfg.wifi.static_ip);
     cJSON_AddStringToObject(wifi, "gateway", g_cfg.wifi.gateway);
@@ -733,9 +737,7 @@ static esp_err_t h_template_delete(httpd_req_t *req)
     }
 }
 
-/// This is the GET handler for root endpoint that redirects to main BMS page or config page.
-/// If device is in AP mode, redirects to /bms/config for configuration.
-/// Otherwise, redirects to /bms (main page).
+/// This is the GET handler for root endpoint that redirects to main BMS page.
 ///
 /// \param req Pointer to HTTP request structure
 /// \return ESP_OK on success, otherwise an error code
@@ -743,12 +745,7 @@ static esp_err_t h_root_redirect(httpd_req_t *req)
 {
     httpd_resp_set_status(req, "302 Found");
     
-    // If in AP mode, redirect to config page
-    if (bms_wifi_is_ap_mode()) {
-        httpd_resp_set_hdr(req, "Location", "/bms/config");
-    } else {
-        httpd_resp_set_hdr(req, "Location", "/bms");
-    }
+    httpd_resp_set_hdr(req, "Location", "/bms");
     
     return httpd_resp_send(req, NULL, 0);
 }
@@ -797,6 +794,15 @@ static esp_err_t h_config_page(httpd_req_t *req)
 static esp_err_t h_js_charts(httpd_req_t *req)
 {
     return send_file(req, "/spiffs/bms/js/charts.js", "application/javascript");
+}
+
+/// This is the GET handler for serving the bundled Chart.js library.
+///
+/// \param req Pointer to HTTP request structure
+/// \return ESP_OK on success, otherwise an error code
+static esp_err_t h_js_chartlib(httpd_req_t *req)
+{
+    return send_file(req, "/spiffs/bms/js/chart.min.js", "application/javascript");
 }
 
 /// This is the GET handler for serving battery templates JavaScript file. It serves the batteries.js file.

@@ -41,6 +41,7 @@
 /*                                       Private Function Prototypes                                            */
 /*==============================================================================================================*/
 static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
+static esp_err_t bms_wifi_start_ap(void);
 
 /*==============================================================================================================*/
 /*                                            Private Constants                                                 */
@@ -56,6 +57,10 @@ static bool s_is_ap_mode = false;
 
 /*==============================================================================================================*/
 /*                                      Public Variables and Constants                                          */
+/*==============================================================================================================*/
+
+/*==============================================================================================================*/
+/*                                       Public Function Definitions                                            */
 /*==============================================================================================================*/
 /// This function initializes the WiFi in station mode and connects to the configured AP. If static IP is configured,
 /// it attempts to set it before connecting. Function performs following steps:
@@ -145,7 +150,7 @@ esp_err_t bms_wifi_init(void)
                                                &wifi_event_handler, NULL));
 
     // Configure WiFi connection settings.
-    wifi_config_t wifi_cfg = { 0 };
+    wifi_config_t wifi_cfg = {0};
     snprintf((char *)wifi_cfg.sta.ssid, sizeof(wifi_cfg.sta.ssid), "%s", g_cfg.wifi.ssid);
     snprintf((char *)wifi_cfg.sta.password, sizeof(wifi_cfg.sta.password), "%s", g_cfg.wifi.pass);
     // Use open auth mode when no password is configured
@@ -163,7 +168,7 @@ esp_err_t bms_wifi_init(void)
                                            pdFALSE, pdFALSE,
                                            pdMS_TO_TICKS(10000));
     if (!(bits & WIFI_CONNECTED_BIT)) {
-        BMS_LOGW("WiFi STA mode connect timeout, switching to AP mode");
+        BMS_LOGW("Unable to connect to WiFi STA - connection timeout, switching to AP mode");
         
         // Clean up STA mode
         esp_wifi_stop();
@@ -201,15 +206,24 @@ esp_err_t bms_wifi_init(void)
     return ESP_OK;
 }
 
+/// This function checks if WiFi is currently running in AP mode.
+///
+/// \param None
+/// \return true if in AP mode, false if in STA mode
+bool bms_wifi_is_ap_mode(void)
+{
+    return s_is_ap_mode;
+}
+
 /*==============================================================================================================*/
-/*                                       Public Function Definitions                                            */
+/*                                       Private Function Definitions                                           */
 /*==============================================================================================================*/
 /// This function starts WiFi in Access Point (AP) mode with predefined credentials.
 /// Used as fallback when STA mode connection fails.
 ///
 /// \param None
 /// \return ESP_OK on success, otherwise an error code
-esp_err_t bms_wifi_start_ap(void)
+static esp_err_t bms_wifi_start_ap(void)
 {
     // Configure AP mode
     wifi_config_t ap_config = {
@@ -246,18 +260,6 @@ esp_err_t bms_wifi_start_ap(void)
     return ESP_OK;
 }
 
-/// This function checks if WiFi is currently running in AP mode.
-///
-/// \param None
-/// \return true if in AP mode, false if in STA mode
-bool bms_wifi_is_ap_mode(void)
-{
-    return s_is_ap_mode;
-}
-
-/*==============================================================================================================*/
-/*                                       Private Function Definitions                                           */
-/*==============================================================================================================*/
 /// WiFi event handler to manage connection events.
 /// Note that paramter 'arg' is unused and cannot be removed because this function is used as a callback with
 /// fixed signature of ESP-IDF event handler.
@@ -280,9 +282,10 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
         BMS_LOGW("╔══════════════════════════════════════════════════════╗");
         BMS_LOGW("  WiFi STA MODE - Connected Successfully");
         BMS_LOGW("╠══════════════════════════════════════════════════════╣");
-        BMS_LOGW("  IP Address: " IPSTR, IP2STR(&event->ip_info.ip));
+        BMS_LOGW("  IP:         " IPSTR, IP2STR(&event->ip_info.ip));
         BMS_LOGW("  Netmask:    " IPSTR, IP2STR(&event->ip_info.netmask));
         BMS_LOGW("  Gateway:    " IPSTR, IP2STR(&event->ip_info.gw));
+        BMS_LOGW("  HTTP:       http://" IPSTR, IP2STR(&event->ip_info.ip));
         BMS_LOGW("╚══════════════════════════════════════════════════════╝");
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
     }

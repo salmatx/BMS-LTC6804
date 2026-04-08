@@ -33,8 +33,6 @@ function buildPackVoltage(hist) {
     labels: hist.map(s => s.timestamp),
     datasets: [
       ds("avg", hist.map(s => s.pack_v_avg), AVG_COLOR),
-      ds("min", hist.map(s => s.pack_v_min), MIN_COLOR),
-      ds("max", hist.map(s => s.pack_v_max), MAX_COLOR),
     ]
   };
 }
@@ -47,8 +45,6 @@ function buildCellVoltage(hist, idx) {
     labels: hist.map(s => s.timestamp),
     datasets: [
       ds("avg", hist.map(s => s.cell_v_avg[idx]), AVG_COLOR),
-      ds("min", hist.map(s => s.cell_v_min[idx]), MIN_COLOR),
-      ds("max", hist.map(s => s.cell_v_max[idx]), MAX_COLOR),
     ]
   };
 }
@@ -61,8 +57,6 @@ function buildCurrent(hist) {
     labels: hist.map(s => s.timestamp),
     datasets: [
       ds("avg", hist.map(s => s.pack_i_avg), AVG_COLOR),
-      ds("min", hist.map(s => s.pack_i_min), MIN_COLOR),
-      ds("max", hist.map(s => s.pack_i_max), MAX_COLOR),
     ]
   };
 }

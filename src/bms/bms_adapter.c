@@ -7,6 +7,7 @@
 #include "ltc6804.h"
 #include "configuration.h"
 #include "logging.h"
+#include "adc.h"
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_mac.h"
@@ -33,6 +34,7 @@ static esp_err_t demo_init(void);
 static esp_err_t demo_read_sample(bms_sample_t *out);
 static esp_err_t ltc6804_adapter_init(void);
 static esp_err_t ltc6804_adapter_read_sample(bms_sample_t *out);
+static float read_current(adc_pin_t pin, float i_min, float i_max);
 
 /*==============================================================================================================*/
 /*                                            Private Constants                                                 */
@@ -221,18 +223,36 @@ static esp_err_t ltc6804_adapter_read_sample(bms_sample_t *out)
     }
     out->pack_v = pack_v;
 
-    // Read pack current from current sensor connected to LTC6804 GPIO pin
-    if (g_cfg.battery.current_enable) {
-        ret = ltc6804_read_current(&out->pack_i);
-        if (ret != ESP_OK) {
-            out->pack_i = 0.0f;
-        }
-    } else {
-        out->pack_i = 0.0f;
-    }
+
+
+    // Read pack current from current sensor connected to LTC6804
+    out->pack_i = read_current(ADC_PIN_GPIO34, 0, 50); // 0-50A range corresponding to 50 amp LEM HTB 50-P/SP5 sensor
 
     // Set timestamp
     out->timestamp = xTaskGetTickCount();
 
     return ESP_OK;
+}
+
+/// This function reads the current from an ADC pin and converts it to a float value in amps using linear mapping.
+/// The mapping assumes that a raw ADC value of 0 corresponds to i_min and a raw ADC value of ADC_RANGE corresponds to i_max.
+///
+/// \param pin ADC pin to read
+/// \param i_min Minimum expected current corresponding to raw ADC value of 0
+/// \param i_max Maximum expected current corresponding to raw ADC value of ADC_RANGE
+/// \return Current in amps corresponding to the raw ADC reading, scaled to the [i_min, i_max] range. If ADC read fails, returns 0.
+static float read_current(adc_pin_t pin, float i_min, float i_max)
+{
+    // Read raw ADC value
+    int raw_value = 0;
+    esp_err_t ret = adc_read(pin, &raw_value);
+    if (ret != ESP_OK) {
+        BMS_LOGE("ADC read failed for pin %d: %s", (int)pin, esp_err_to_name(ret));
+        return 0;
+    }
+
+    // Convert raw ADC value to current using linear mapping
+    // Assuming raw_value of 0 corresponds to i_min and raw_value of 4095 corresponds to i_max
+    float current = i_min + (i_max - i_min) * (float)raw_value / (float)ADC_RANGE;
+    return current;
 }

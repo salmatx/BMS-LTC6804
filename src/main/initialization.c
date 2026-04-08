@@ -19,6 +19,7 @@
 #include "http_server.h"
 #include "telemetry.h"
 #include "stats_history.h"
+#include "adc.h"
 
 
 /*==============================================================================================================*/
@@ -80,36 +81,18 @@ bool initialization_exec(void)
         return false;
     }
 
-    // Start HTTP server regardless of WiFi mode (needed for configuration in AP mode)
+    // Start HTTP server
     err = http_server_start();
     if (err != ESP_OK) return false;
 
-    // If WiFi is in AP mode (fallback), enter CONFIG state for user configuration
-    if (bms_wifi_is_ap_mode()) {
-        BMS_LOGI("WiFi in AP mode - entering CONFIG state for user configuration");
-        
-        // Set NVS flag to enter CONFIG state
-        nvs_handle_t nvs_handle;
-        err = nvs_open("storage", NVS_READWRITE, &nvs_handle);
-        if (err == ESP_OK) {
-            nvs_set_u8(nvs_handle, "config_mode", 1);
-            nvs_commit(nvs_handle);
-            nvs_close(nvs_handle);
-            BMS_LOGI("CONFIG mode flag set in NVS");
-        } else {
-            BMS_LOGW("Failed to set CONFIG mode flag: %s", esp_err_to_name(err));
+    // MQTT initialization (only in STA mode - requires network connection to broker)
+    bool ap_mode = bms_wifi_is_ap_mode();
+    if (!ap_mode) {
+        err = bms_mqtt_init();
+        if (err != ESP_OK) {
+            BMS_LOGE("MQTT init failed: %s", esp_err_to_name(err));
+            return false;
         }
-        
-        // Return false to trigger CONFIG state, skip BMS initialization
-        return false;
-    }
-
-    // Normal STA mode - continue with full initialization
-    // MQTT initialization must be done after WiFi is initialized. Connecting to broker is done in MQTT module.
-    err = bms_mqtt_init();
-    if (err != ESP_OK) {
-        BMS_LOGE("MQTT init failed: %s", esp_err_to_name(err));
-        return false;
     }
 
     // Select and initialize BMS adapter based on configuration
@@ -120,6 +103,13 @@ bool initialization_exec(void)
     }
     if (err != ESP_OK) {
         BMS_LOGE("BMS adapter init failed: %s", esp_err_to_name(err));
+        return false;
+    }
+
+    // Initialize ESP32 ADC
+    err = adc_init();
+    if (err != ESP_OK) {
+        BMS_LOGE("ADC init failed: %s", esp_err_to_name(err));
         return false;
     }
 
@@ -134,6 +124,24 @@ bool initialization_exec(void)
     }
 
     BMS_LOGI("Application started, tasks running");
+
+    // If WiFi is in AP mode (fallback), enter CONFIG state for user configuration
+    if (ap_mode) {
+        BMS_LOGI("WiFi in AP mode - entering CONFIG state");
+
+        nvs_handle_t nvs_handle;
+        err = nvs_open("storage", NVS_READWRITE, &nvs_handle);
+        if (err == ESP_OK) {
+            nvs_set_u8(nvs_handle, "config_mode", 1);
+            nvs_commit(nvs_handle);
+            nvs_close(nvs_handle);
+            BMS_LOGI("CONFIG mode flag set in NVS");
+        } else {
+            BMS_LOGW("Failed to set CONFIG mode flag: %s", esp_err_to_name(err));
+        }
+
+        return false;
+    }
 
     return true;
 }
