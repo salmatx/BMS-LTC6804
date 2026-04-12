@@ -5,6 +5,7 @@
     "adapter": "ltc6804",
     "num_cells": 5,
     "current_enable": false,
+    "temperature_enable": false,
     "cell_v_min": 1.00,
     "cell_v_max": 5.00,
     "pack_v_min": 5.00,
