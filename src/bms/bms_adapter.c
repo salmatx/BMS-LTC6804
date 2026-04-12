@@ -20,6 +20,18 @@
 /*==============================================================================================================*/
 /// Log module tag used by logging module
 #define LOG_MODULE_TAG "BMS_ADAPTER"
+/// PT1000 reference resistance at 0 deg C (Ohms)
+#define PT1000_R0      1000.0f
+/// Callendar-Van Dusen coefficient A (IEC 60751)
+#define PT1000_A       3.9083e-3f
+/// Callendar-Van Dusen coefficient B (IEC 60751)
+#define PT1000_B      -5.775e-7f
+/// Callendar-Van Dusen coefficient C (IEC 60751, used below 0 deg C only)
+#define PT1000_C      -4.183e-12f
+/// ESP32 ADC reference voltage (V)
+#define PT1000_V_REF   3.3f
+/// Reference resistor in voltage divider circuit (Ohms)
+#define PT1000_R_REF   1000.0f
 
 /*==============================================================================================================*/
 /*                                              Private Types                                                   */
@@ -35,6 +47,8 @@ static esp_err_t demo_read_sample(bms_sample_t *out);
 static esp_err_t ltc6804_adapter_init(void);
 static esp_err_t ltc6804_adapter_read_sample(bms_sample_t *out);
 static float read_current(adc_pin_t pin, float i_min, float i_max);
+static float read_pt1000(adc_pin_t pin);
+static float read_temperature(void);
 
 /*==============================================================================================================*/
 /*                                            Private Constants                                                 */
@@ -178,6 +192,13 @@ static esp_err_t demo_read_sample(bms_sample_t *out)
         out->pack_i = 0.0f;
     }
 
+    // Generate random temperature (only if temperature measurement enabled)
+    if (g_cfg.battery.temperature_enable) {
+        out->temperature = demo_rand01() * 60.0f; // 0 to 60 deg C
+    } else {
+        out->temperature = 0.0f;
+    }
+
     out->timestamp = xTaskGetTickCount();
 
     return ESP_OK;
@@ -228,6 +249,9 @@ static esp_err_t ltc6804_adapter_read_sample(bms_sample_t *out)
     // Read pack current from current sensor connected to LTC6804
     out->pack_i = read_current(ADC_PIN_GPIO34, 0, 50); // 0-50A range corresponding to 50 amp LEM HTB 50-P/SP5 sensor
 
+    // Read temperature from sensor
+    out->temperature = read_temperature();
+
     // Set timestamp
     out->timestamp = xTaskGetTickCount();
 
@@ -255,4 +279,87 @@ static float read_current(adc_pin_t pin, float i_min, float i_max)
     // Assuming raw_value of 0 corresponds to i_min and raw_value of 4095 corresponds to i_max
     float current = i_min + (i_max - i_min) * (float)raw_value / (float)ADC_RANGE;
     return current;
+}
+
+/// This function reads the resistance of a PT1000 sensor connected via a voltage divider
+/// to the specified ADC pin and converts it to temperature in degrees Celsius.
+/// Uses the Callendar-Van Dusen equation (IEC 60751) to convert resistance to temperature.
+///
+/// \param pin ADC pin connected to the PT1000 voltage divider output
+/// \return Temperature in degrees Celsius, or 0 if reading fails
+static float read_pt1000(adc_pin_t pin)
+{
+    int raw_value = 0;
+    esp_err_t ret = adc_read(pin, &raw_value);
+    if (ret != ESP_OK) {
+        BMS_LOGE("ADC read failed for pin %d: %s", (int)pin, esp_err_to_name(ret));
+        return 0;
+    }
+
+    // Convert raw ADC value to voltage
+    float voltage = (float)raw_value * PT1000_V_REF / (float)ADC_RANGE;
+
+    // Calculate PT1000 resistance from voltage divider: R_pt1000 = R_ref * V / (V_ref - V)
+    float denom = PT1000_V_REF - voltage;
+    if (denom <= 0.0f) {
+        BMS_LOGE("PT1000 voltage divider error: voltage too high");
+        return 0;
+    }
+    float resistance = PT1000_R_REF * voltage / denom;
+
+    // Convert resistance to temperature using Callendar-Van Dusen equation (IEC 60751)
+    // For T >= 0: R(T) = R0*(1 + A*T + B*T^2)                 - solve quadratic
+    // For T <  0: R(T) = R0*(1 + A*T + B*T^2 + C*(T-100)*T^3) - Newton-Raphson
+    float ratio = resistance / PT1000_R0;
+    float discriminant = PT1000_A * PT1000_A - 4.0f * PT1000_B * (1.0f - ratio);
+    if (discriminant < 0.0f) {
+        BMS_LOGE("PT1000 conversion error: resistance out of range");
+        return 0;
+    }
+    // Only positive root is valid. Check by assuming ratio as 0 (0 deg C). Calculation will be simplified to T1 = (A-A) / (2*B)
+    // and T2 = (-A-A) / (2*B). Since B is negative, T1 will be 0 deg C and T2 will be outside of PT1000 range.
+    float temperature = (-PT1000_A + sqrtf(discriminant)) / (2.0f * PT1000_B);
+
+    // If quadratic yields T < 0, refine with full equation including C coefficient
+    // using Newton-Raphson to calculate formula: f(T) = R0*(1 + A*T + B*T^2 + C*(T-100)*T^3)
+    if (temperature < 0.0f) {
+        float t = temperature; // initial guess from quadratic
+        // Perform Newton-Raphson iterations according to formula x_{n+1} = x_n - f(x_n) / f'(x_n). Max number of iterations is 20.
+        for (int iter = 0; iter < 20; ++iter) {
+            float t2 = t * t;
+            float t3 = t2 * t;
+            // f(T) = R0*(1 + A*T + B*T^2 + C*(T-100)*T^3)
+            float f  = PT1000_R0 * (1.0f + PT1000_A * t + PT1000_B * t2
+                       + PT1000_C * (t - 100.0f) * t3) - resistance;
+            // f'(T) = R0*(A + 2*B*T + C*(4*T^3 - 300*T^2))
+            float df = PT1000_R0 * (PT1000_A + 2.0f * PT1000_B * t
+                       + PT1000_C * (4.0f * t3 - 300.0f * t2));
+            // Accuracy threshold for Newton-Raphson. For thermal degree of freedom is standard engineering value 1e-6.
+            // Prevents to division by zero and limits iterations when close enough to solution.
+            if (fabsf(df) < 1e-6f) {
+                break;
+            }
+            // f(x_n) / f'(x_n)
+            float dt = f / df;
+            // x_n - f(x_n) / f'(x_n)
+            t -= dt;
+            // Stop iterations if change of temperature is below 0.001 deg C.
+            if (fabsf(dt) < 0.001f) {
+                break;
+            }
+        }
+        temperature = t;
+    }
+
+    return temperature;
+}
+
+/// This function reads the temperature from the PT1000 sensor connected to GPIO35.
+/// Acts as an adapter to allow future switching to a different thermal sensor.
+///
+/// \param None
+/// \return Temperature in degrees Celsius
+static float read_temperature(void)
+{
+    return read_pt1000(ADC_PIN_GPIO35);
 }

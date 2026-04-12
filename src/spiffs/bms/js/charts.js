@@ -4,8 +4,10 @@ let packChart = null;
 const cellCharts = {};
 /// Reference to current chart instance
 let iChart = null;
+/// Reference to temperature chart instance
+let tChart = null;
 /// Runtime configuration (fetched once at startup)
-let bmsCfg = { num_cells: 5, current_enable: true };
+let bmsCfg = { num_cells: 5, current_enable: true, temperature_enable: false };
 
 /// Client-side history buffer (circular array, max 60 seconds of data)
 const HISTORY_MAX_SEC = 60;
@@ -57,6 +59,18 @@ function buildCurrent(hist) {
     labels: hist.map(s => s.timestamp),
     datasets: [
       ds("avg", hist.map(s => s.pack_i_avg), AVG_COLOR),
+    ]
+  };
+}
+
+// ── Temperature ─────────────────────────────────────────────────────
+
+/// Build data object for the temperature chart.
+function buildTemperature(hist) {
+  return {
+    labels: hist.map(s => s.timestamp),
+    datasets: [
+      ds("avg", hist.map(s => s.temperature_avg), AVG_COLOR),
     ]
   };
 }
@@ -219,6 +233,24 @@ async function refresh() {
   } else {
     if (iContainer) iContainer.style.display = "none";
   }
+
+  // ── Temperature chart ──
+  const tContainer = document.getElementById("tchart-container");
+  if (bmsCfg.temperature_enable) {
+    if (tContainer) tContainer.style.display = "";
+    const td = buildTemperature(history);
+    if (!tChart) {
+      const ctx = document.getElementById("tchart");
+      if (ctx) {
+        tChart = new Chart(ctx, { type: "line", data: td, options: CHART_OPTS });
+      }
+    } else {
+      tChart.data = td;
+      tChart.update("none");
+    }
+  } else {
+    if (tContainer) tContainer.style.display = "none";
+  }
 }
 
 // ── Initialisation ──────────────────────────────────────────────────
@@ -230,6 +262,7 @@ async function init() {
     const cfg = await r.json();
     bmsCfg.num_cells = cfg.battery.num_cells || 5;
     bmsCfg.current_enable = cfg.battery.current_enable !== false;
+    bmsCfg.temperature_enable = cfg.battery.temperature_enable === true;
   } catch (e) {
     console.error("Failed to load config, using defaults", e);
   }

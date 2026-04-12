@@ -319,6 +319,7 @@ static esp_err_t h_config_data(httpd_req_t *req)
         g_cfg.battery.adapter_mode == BMS_ADAPTER_DEMO ? "demo" : "ltc6804");
     cJSON_AddNumberToObject(bat, "num_cells", g_cfg.battery.num_cells);
     cJSON_AddBoolToObject(bat, "current_enable", g_cfg.battery.current_enable);
+    cJSON_AddBoolToObject(bat, "temperature_enable", g_cfg.battery.temperature_enable);
     cJSON_AddNumberToObject(bat, "cell_v_min", g_cfg.battery.cell_v_min);
     cJSON_AddNumberToObject(bat, "cell_v_max", g_cfg.battery.cell_v_max);
     cJSON_AddNumberToObject(bat, "pack_v_min", g_cfg.battery.pack_v_min);
@@ -457,6 +458,12 @@ static esp_err_t h_config_save(httpd_req_t *req)
     } else {
         // Checkbox not present in POST data means unchecked
         g_cfg.battery.current_enable = false;
+    }
+    if (parse_post_param(buf, "temperature_enable", value, sizeof(value)) == ESP_OK) {
+        g_cfg.battery.temperature_enable = (strcmp(value, "1") == 0 || strcmp(value, "on") == 0 || strcmp(value, "true") == 0);
+    } else {
+        // Checkbox not present in POST data means unchecked
+        g_cfg.battery.temperature_enable = false;
     }
     if (parse_post_param(buf, "cell_v_min", value, sizeof(value)) == ESP_OK) {
         g_cfg.battery.cell_v_min = roundf(atof(value) * 100.0f) / 100.0f;

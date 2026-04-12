@@ -64,6 +64,7 @@ configuration_t g_cfg = {
         .adapter_mode   = BMS_ADAPTER_LTC6804,
         .num_cells      = 5,
         .current_enable = false,
+        .temperature_enable = false,
         .cell_v_min     = 0.5f,
         .cell_v_max     = 2.0f,
         .pack_v_min     = 2.5f,
@@ -148,6 +149,7 @@ esp_err_t configuration_load(const char *path)
         if (num_cells > BMS_MAX_CELLS) num_cells = BMS_MAX_CELLS;
         g_cfg.battery.num_cells = (uint8_t)num_cells;
         json_get_bool(jbatt, "current_enable", &g_cfg.battery.current_enable);
+        json_get_bool(jbatt, "temperature_enable", &g_cfg.battery.temperature_enable);
         json_get_float(jbatt, "cell_v_min",  &g_cfg.battery.cell_v_min);
         json_get_float(jbatt, "cell_v_max",  &g_cfg.battery.cell_v_max);
         json_get_float(jbatt, "pack_v_min",  &g_cfg.battery.pack_v_min);
@@ -201,6 +203,7 @@ esp_err_t configuration_save(const char *path)
         g_cfg.battery.adapter_mode == BMS_ADAPTER_DEMO ? "demo" : "ltc6804");
     cJSON_AddNumberToObject(jbatt, "num_cells", g_cfg.battery.num_cells);
     cJSON_AddBoolToObject(jbatt, "current_enable", g_cfg.battery.current_enable);
+    cJSON_AddBoolToObject(jbatt, "temperature_enable", g_cfg.battery.temperature_enable);
     cJSON_AddNumberToObject(jbatt, "cell_v_min", g_cfg.battery.cell_v_min);
     cJSON_AddNumberToObject(jbatt, "cell_v_max", g_cfg.battery.cell_v_max);
     cJSON_AddNumberToObject(jbatt, "pack_v_min", g_cfg.battery.pack_v_min);

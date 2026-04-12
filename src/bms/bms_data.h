@@ -23,6 +23,7 @@ typedef struct {
     float      cell_v[BMS_MAX_CELLS];  ///< per-cell voltages
     float      pack_v;                 ///< sum of cells
     float      pack_i;                 ///< pack current
+    float      temperature;            ///< temperature in degrees Celsius
     TickType_t timestamp;              ///< RTOS ticks
 } bms_sample_t;
 

@@ -80,10 +80,20 @@
           <label for="num_cells">Number of Cells:</label>
           <input type="number" id="num_cells" name="num_cells" step="1" min="1" max="12" required>
         </div>
+      </div>
+
+      <div class="grid">
         <div class="form-group">
           <label for="current_enable">Current Measurement:</label>
           <div style="display:flex;align-items:center;gap:8px;margin-top:4px;">
             <input type="checkbox" id="current_enable" name="current_enable" value="1" style="width:auto;">
+            <span>Enable</span>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="temperature_enable">Temperature Measurement:</label>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:4px;">
+            <input type="checkbox" id="temperature_enable" name="temperature_enable" value="1" style="width:auto;">
             <span>Enable</span>
           </div>
         </div>
@@ -328,6 +338,7 @@
             document.getElementById('adapter_ltc6804').checked = true;
           }
           document.getElementById('current_enable').checked = data.battery.current_enable !== false;
+          document.getElementById('temperature_enable').checked = data.battery.temperature_enable === true;
           document.getElementById('cell_v_min').value = fmt2(data.battery.cell_v_min) || '2.80';
           document.getElementById('cell_v_max').value = fmt2(data.battery.cell_v_max) || '4.20';
           document.getElementById('pack_v_min').value = fmt2(data.battery.pack_v_min) || '39.00';

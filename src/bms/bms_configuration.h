@@ -26,6 +26,7 @@ typedef struct {
     bms_adapter_mode_t adapter_mode;    ///< Selected BMS adapter (ltc6804 or demo)
     uint8_t num_cells;                  ///< Number of cells in the battery pack (runtime configurable)
     bool    current_enable;             ///< Enable current measurement (true = measure, false = skip)
+    bool    temperature_enable;         ///< Enable temperature measurement (true = measure, false = skip)
     float   cell_v_min;                 ///< Minimum per-cell voltage
     float   cell_v_max;                 ///< Maximum per-cell voltage
     float   pack_v_min;                 ///< Minimum total pack voltage

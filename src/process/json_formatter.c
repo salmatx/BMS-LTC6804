@@ -105,6 +105,13 @@ int bms_stats_to_json(const bms_stats_t *st, char *buf, size_t buf_size)
             st->pack_i_avg);
     }
 
+    // Temperature average (only if temperature measurement is enabled)
+    if (g_cfg.battery.temperature_enable) {
+        JSON_APPEND(off, buf, buf_size,
+            ",\"temperature_avg\":%.2f",
+            st->temperature_avg);
+    }
+
     // Configuration limit values in separate config object
     JSON_APPEND(off, buf, buf_size,
         ",\"config\":{\"cell_v_min\":%.3f,\"cell_v_max\":%.3f",

@@ -30,6 +30,8 @@ typedef struct {
 
     float pack_i_avg;                                   ///< Average  pack current
 
+    float temperature_avg;                               ///< Average  temperature (deg C)
+
     uint32_t cell_errors;                               ///< Bitmask of limit violations
                                                         ///< Bit  0:       inspection bit ("valid data" marker) always set
                                                         ///< Bit  1- 2:    cell  0 undervoltage / overvoltage

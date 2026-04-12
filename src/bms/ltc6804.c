@@ -199,16 +199,25 @@ esp_err_t ltc6804_init(float cell_v_min, float cell_v_max)
         0x00,                                       // CFGR5: DCTO[3:0]=0, DCC9-DCC12 off
     };
 
-    // Wake the LTC6804 from sleep state (long CS pulse) and allow oscillator to stabilize.
+    // Aggressive wakeup: multiple sleep-wake pulses to ensure LTC6804 oscillator starts.
     // Datasheet tSTART (oscillator startup from SLEEP) can be up to ~3 ms.
-    wakeup_sleep();
-    vTaskDelay(pdMS_TO_TICKS(4));
+    for (int w = 0; w < 3; ++w) {
+        wakeup_sleep();
+        vTaskDelay(pdMS_TO_TICKS(5));
+    }
+
+    BMS_LOGI("SPI pins: MOSI=%d, MISO=%d, SCLK=%d, CS=%d",
+             LTC6804_PIN_MOSI, LTC6804_PIN_MISO, LTC6804_PIN_SCLK, LTC6804_PIN_CS);
+    BMS_LOGI("CS pin level: %d", gpio_get_level(LTC6804_PIN_CS));
 
     // Write configuration with readback verification and retry
     uint8_t r_cfg[8];
     bool cfg_ok = false;
 
     for (int attempt = 0; attempt < LTC6804_MAX_RETRIES; ++attempt) {
+        wakeup_sleep();
+        vTaskDelay(pdMS_TO_TICKS(5));
+
         ret = ltc6804_wrcfg(cfg);
         if (ret != ESP_OK) {
             BMS_LOGW("WRCFG attempt %d failed: %s", attempt + 1, esp_err_to_name(ret));
@@ -218,7 +227,10 @@ esp_err_t ltc6804_init(float cell_v_min, float cell_v_max)
         // Read back and verify config was latched
         ret = ltc6804_rdcfg(r_cfg);
         if (ret != ESP_OK) {
-            BMS_LOGW("RDCFG attempt %d failed: %s", attempt + 1, esp_err_to_name(ret));
+            BMS_LOGW("RDCFG attempt %d failed: %s | raw: %02X %02X %02X %02X %02X %02X %02X %02X",
+                     attempt + 1, esp_err_to_name(ret),
+                     r_cfg[0], r_cfg[1], r_cfg[2], r_cfg[3],
+                     r_cfg[4], r_cfg[5], r_cfg[6], r_cfg[7]);
             continue;
         }
 
@@ -639,6 +651,10 @@ static esp_err_t ltc6804_rdcfg(uint8_t r_cfg[8])
     uint16_t received_pec = ((uint16_t)r_cfg[6] << 8) | r_cfg[7];
     uint16_t calc_pec = pec15_calc(6, r_cfg);
     if (received_pec != calc_pec) {
+        BMS_LOGW("RDCFG raw RX: %02X %02X %02X %02X %02X %02X %02X %02X | PEC recv=%04X calc=%04X",
+                 r_cfg[0], r_cfg[1], r_cfg[2], r_cfg[3],
+                 r_cfg[4], r_cfg[5], r_cfg[6], r_cfg[7],
+                 received_pec, calc_pec);
         return ESP_ERR_INVALID_CRC;
     }
     return ESP_OK;

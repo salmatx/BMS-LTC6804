@@ -229,6 +229,8 @@ static void init_stats_from_first(const bms_sample_t *raw_sample, bms_stats_t *o
     out->pack_v_avg = 0.0f;
 
     out->pack_i_avg = 0.0f;
+
+    out->temperature_avg = 0.0f;
 }
 
 /// This function zeros all fields of a \ref bms_sample_t structure which refers to one measured BMS sample.
@@ -264,6 +266,10 @@ static void accumulate_sample(const bms_sample_t *raw_sample, bms_stats_t *out)
         out->pack_i_avg += raw_sample->pack_i;
     }
 
+    if (g_cfg.battery.temperature_enable) {
+        out->temperature_avg += raw_sample->temperature;
+    }
+
     out->sample_count++;
 }
 
@@ -285,5 +291,8 @@ static void calculate_average(bms_stats_t *accumulated_samples)
     accumulated_samples->pack_v_avg *= inv_n;
     if (g_cfg.battery.current_enable) {
         accumulated_samples->pack_i_avg *= inv_n;
+    }
+    if (g_cfg.battery.temperature_enable) {
+        accumulated_samples->temperature_avg *= inv_n;
     }
 }
