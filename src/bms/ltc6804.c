@@ -1,6 +1,6 @@
 /// LTC6804-2 multicell battery monitor ADC driver for ESP-IDF.
 /// Communicates with the LTC6804-2 over SPI to measure individual cell voltages.
-/// Ported from Linduino Arduino library -LTC68042.cpp (https://www.analog.com/en/products/ltc6804-1.html)
+/// Ported from Linduino Arduino library - file LTC68042.cpp (https://www.analog.com/en/products/ltc6804-1.html)
 /// to ESP-IDF SPI master driver.
 
 /*==============================================================================================================*/
@@ -29,7 +29,7 @@
 #define BYTES_IN_REG   6
 
 /// ADC conversion delay for normal mode (in ms). Datasheet specifies ~2.3 ms for fast, ~3 ms for normal.
-/// Using 10 ms provides safe margin for all modes.
+/// Using 10 ms provides safe margin.
 #define ADC_CONV_DELAY_MS  10
 
 /// LTC6804-2 addressed mode prefix
@@ -46,12 +46,12 @@
 /*                                       Private Function Prototypes                                            */
 /*==============================================================================================================*/
 static uint16_t pec15_calc(uint8_t len, const uint8_t *data);
-static void     set_adc_cmd(uint8_t md, uint8_t dcp, uint8_t ch);
+static void set_adc_cmd(uint8_t md, uint8_t dcp, uint8_t ch);
 static esp_err_t spi_transfer(const uint8_t *tx, uint8_t *rx, size_t len);
-static void     cs_low(void);
-static void     cs_high(void);
-static void     wakeup_idle(void);
-static void     wakeup_sleep(void);
+static void cs_low(void);
+static void cs_high(void);
+static void wakeup_idle(void);
+static void wakeup_sleep(void);
 static esp_err_t ltc6804_adcv(void);
 static esp_err_t ltc6804_adstat(void);
 static esp_err_t ltc6804_rdcv(uint16_t cell_codes[LTC6804_MAX_CELLS]);
@@ -106,10 +106,10 @@ static const uint16_t crc15_table[256] = {
 /// SPI device handle for the LTC6804
 static spi_device_handle_t s_spi_dev = NULL;
 
-/// Pre-computed ADCV command bytes (set by set_adc_cmd)
+/// Pre-computed ADCV command bytes
 static uint8_t s_adcv_cmd[2];
 
-/// Pre-computed ADSTAT command bytes (set by set_adc_cmd)
+/// Pre-computed ADSTAT command bytes
 static uint8_t s_adstat_cmd[2];
 
 /*==============================================================================================================*/
@@ -119,18 +119,21 @@ static uint8_t s_adstat_cmd[2];
 /*==============================================================================================================*/
 /*                                       Public Function Definitions                                            */
 /*==============================================================================================================*/
-/// This function initializes the SPI bus and configures the LTC6804-2 chip.
-/// Sets up ESP-IDF SPI master on the configured pins, adds the LTC6804 as a device,
-/// configures ADC mode (normal, all channels, discharge disabled), and writes
-/// the configuration register with undervoltage/overvoltage thresholds derived
-/// from cell_v_min and cell_v_max.
+/// This function initializes the SPI bus and configures the LTC6804-2.
+/// It configures the CS pin for manual GPIO control, initializes the ESP-IDF SPI master
+/// bus, adds the LTC6804 as an SPI device, selects ADC conversion commands for normal mode,
+/// and computes undervoltage/overvoltage threshold register values from cell_v_min and
+/// cell_v_max. Before configuration writes, the function issues repeated wakeup pulses to ensure the
+/// LTC6804 oscillator is running. It then writes the configuration register, reads it back,
+/// and verifies the written threshold bytes. Configuration write/readback is retried up to
+/// ::LTC6804_MAX_RETRIES times before failing.
 ///
-/// \param cell_v_min Minimum per-cell voltage (V) for undervoltage threshold
-/// \param cell_v_max Maximum per-cell voltage (V) for overvoltage threshold
-/// \return ESP_OK on success, otherwise an error code
+/// \param[in] cell_v_min Minimum per-cell voltage (V) for undervoltage threshold
+/// \param[in] cell_v_max Maximum per-cell voltage (V) for overvoltage threshold
+/// \return ESP_OK on success, otherwise an error code from SPI/configuration failure
 esp_err_t ltc6804_init(float cell_v_min, float cell_v_max)
 {
-    // Configure CS pin as GPIO output (manual control for isoSPI wakeup timing)
+    // Configure CS pin as GPIO output
     gpio_config_t cs_cfg = {
         .pin_bit_mask  = (1ULL << LTC6804_PIN_CS),
         .mode          = GPIO_MODE_OUTPUT,
@@ -139,7 +142,8 @@ esp_err_t ltc6804_init(float cell_v_min, float cell_v_max)
         .intr_type     = GPIO_INTR_DISABLE,
     };
     gpio_config(&cs_cfg);
-    gpio_set_level(LTC6804_PIN_CS, 1); // CS idle high
+    // Set CS to high - idle
+    cs_high();
 
     // Configure SPI bus
     spi_bus_config_t bus_cfg = {
@@ -161,7 +165,7 @@ esp_err_t ltc6804_init(float cell_v_min, float cell_v_max)
     spi_device_interface_config_t dev_cfg = {
         .mode           = 3,               // SPI Mode 3 (CPOL=1, CPHA=1) per LTC6804 datasheet
         .clock_speed_hz = LTC6804_SPI_FREQ_HZ,
-        .spics_io_num   = -1,              // Manual CS control via GPIO
+        .spics_io_num   = -1,              // Manual CS control via GPIO (cs_high() and cs_low())
         .queue_size     = 1,
         .flags          = 0,
     };
@@ -176,10 +180,12 @@ esp_err_t ltc6804_init(float cell_v_min, float cell_v_max)
     set_adc_cmd(LTC6804_MD_NORMAL, LTC6804_DCP_DISABLED, LTC6804_CH_ALL);
 
     // Compute 12-bit VUV and VOV register values from voltage thresholds.
-    // Datasheet formulas: Comparison Voltage = (VUV + 1) * 16 * 100µV
-    //                     Comparison Voltage = VOV * 16 * 100µV
+    // Datasheet formulas: Comparison Voltage (min value) = (VUV + 1) * 16 * 100µV
+    //                     Comparison Voltage (max value) = VOV * 16 * 100µV
     uint16_t vuv = (uint16_t)(cell_v_min / 0.0016f) - 1;
     uint16_t vov = (uint16_t)(cell_v_max / 0.0016f);
+    // Clamp to the 12-bit LTC6804 threshold field width so out-of-range configuration
+    // values saturate at the highest representable register value instead of overflowing
     if (vuv > 0xFFF) vuv = 0xFFF;
     if (vov > 0xFFF) vov = 0xFFF;
 
@@ -199,7 +205,7 @@ esp_err_t ltc6804_init(float cell_v_min, float cell_v_max)
         0x00,                                       // CFGR5: DCTO[3:0]=0, DCC9-DCC12 off
     };
 
-    // Aggressive wakeup: multiple sleep-wake pulses to ensure LTC6804 oscillator starts.
+    // Wakeup with multiple sleep-wake pulses to ensure LTC6804 oscillator starts.
     // Datasheet tSTART (oscillator startup from SLEEP) can be up to ~3 ms.
     for (int w = 0; w < 3; ++w) {
         wakeup_sleep();
@@ -259,12 +265,19 @@ esp_err_t ltc6804_init(float cell_v_min, float cell_v_max)
     return ESP_OK;
 }
 
-/// This function triggers an ADC conversion on the LTC6804, waits for completion,
-/// reads back all cell voltage registers, and converts raw codes to voltages in volts.
+/// This function triggers a cell-voltage ADC conversion on the LTC6804, waits for
+/// conversion completion, reads all cell voltage register groups, and converts the raw
+/// ADC codes of the requested cells to volts.
+/// The read sequence is retried up to ::LTC6804_MAX_RETRIES times because SPI transfer
+/// errors or PEC mismatches can be transient due to wakeup timing or communication noise.
+/// Only the first num_cells values are copied to the output array, although all register
+/// groups are read internally.
 ///
-/// \param[out] voltages   Array to receive cell voltages (in volts)
-/// \param[in]  num_cells  Number of cells to populate (1..LTC6804_MAX_CELLS)
-/// \return ESP_OK on success, ESP_ERR_INVALID_ARG on bad parameters, ESP_ERR_INVALID_CRC on PEC mismatch
+/// \param[out] voltages   Array to receive cell voltages in volts
+/// \param[in]  num_cells  Number of cell voltages to populate (1 to ::LTC6804_MAX_CELLS)
+/// \return ESP_OK on success, ESP_ERR_INVALID_ARG on invalid parameters, or an error code
+///         propagated from the underlying conversion/read sequence (for example
+///         ESP_ERR_INVALID_CRC on PEC mismatch)
 esp_err_t ltc6804_read_cell_voltages(float *voltages, uint8_t num_cells)
 {
     if (!voltages || num_cells == 0 || num_cells > LTC6804_MAX_CELLS) {
@@ -293,7 +306,7 @@ esp_err_t ltc6804_read_cell_voltages(float *voltages, uint8_t num_cells)
     }
 
     if (ret != ESP_OK) {
-        // Rate-limit warning: only log every 20th failure to avoid UART overload / WDT
+        // Warning: only log every 20th failure to avoid UART overload and MCU reset
         static uint32_t s_fail_cnt = 0;
         if ((++s_fail_cnt % 20) == 1) {
             BMS_LOGW("LTC6804 read failed (%lu total, last %d attempts): %s",
@@ -302,7 +315,8 @@ esp_err_t ltc6804_read_cell_voltages(float *voltages, uint8_t num_cells)
         return ret;
     }
 
-    // Convert raw ADC codes to volts: each LSB = 100 µV = 0.0001 V
+    // Convert the requested raw LTC6804 cell codes to volts.
+    // Per datasheet, each code LSB corresponds to 100 uV, so voltage = code * 0.0001 V.
     for (uint8_t i = 0; i < num_cells; ++i) {
         voltages[i] = (float)cell_codes[i] * 0.0001f;
     }
@@ -313,7 +327,7 @@ esp_err_t ltc6804_read_cell_voltages(float *voltages, uint8_t num_cells)
 /// This function reads the LTC6804 status registers. Triggers a status ADC conversion, reads both
 /// Status Register Groups A and B, verifies PEC, and returns the raw 6-byte contents of each group.
 ///
-/// STATA layout (Table 43): STAR0-1: SOC[15:0], STAR2-3: ITMP[15:0], STAR4-5: VA[15:0]
+/// STATA layout (Table 43): STAR0-1: SOC[15:0], STAR2-3: ITMP[15:0], STAR4-5: VA[15:0]<br>
 /// STATB layout (Table 44): STBR0-1: VD[15:0], STBR2: C4OV..C1UV, STBR3: C8OV..C5UV,
 ///                          STBR4: C12OV..C9UV, STBR5: REV[7:4] RSVD[3:2] MUXFAIL[1] THSD[0]
 ///
@@ -378,8 +392,8 @@ esp_err_t ltc6804_read_status(uint8_t stata[6], uint8_t statb[6])
 /// This function calculates the CRC15/PEC15 used by the LTC6804 for data integrity verification.
 /// Uses the pre-computed lookup table. The result is left-shifted by 1 (LSB is always 0).
 ///
-/// \param len   Number of bytes in data
-/// \param data  Pointer to data bytes
+/// \param[in] len   Number of bytes in data
+/// \param[in] data  Pointer to data bytes
 /// \return 16-bit PEC value (CRC15 * 2)
 static uint16_t pec15_calc(uint8_t len, const uint8_t *data)
 {
@@ -392,11 +406,11 @@ static uint16_t pec15_calc(uint8_t len, const uint8_t *data)
 }
 
 /// This function maps ADC mode, discharge control, and channel selection
-/// into the 2-byte ADCV and ADSTAT commands stored in s_adcv_cmd and s_adstat_cmd.
+/// into the 2-byte ADCV and ADSTAT commands stored in ::s_adcv_cmd and ::s_adstat_cmd.
 ///
-/// \param md  ADC conversion mode (LTC6804_MD_FAST / NORMAL / FILTERED)
-/// \param dcp Discharge control (LTC6804_DCP_DISABLED / ENABLED)
-/// \param ch  Cell channel selection (LTC6804_CH_ALL .. LTC6804_CH_6_AND_12)
+/// \param[in] md  ADC conversion mode
+/// \param[in] dcp Discharge control
+/// \param[in] ch  Cell channel selection
 static void set_adc_cmd(uint8_t md, uint8_t dcp, uint8_t ch)
 {
     uint8_t md_bits;
@@ -423,10 +437,10 @@ static void set_adc_cmd(uint8_t md, uint8_t dcp, uint8_t ch)
 /// This function performs an SPI transfer (simultaneous TX and RX).
 /// CS is NOT managed here — caller must assert/deassert CS via cs_low()/cs_high().
 ///
-/// \param tx   TX buffer (may be NULL for RX-only)
-/// \param rx   RX buffer (may be NULL for TX-only)
-/// \param len  Number of bytes to transfer
-/// \return ESP_OK on success
+/// \param[in] tx   TX buffer (may be NULL to send zeros and discard output — effectively RX-only)
+/// \param[in] rx   RX buffer (may be NULL to discard received bytes — effectively TX-only)
+/// \param[in] len  Number of bytes to transfer
+/// \return ESP_OK on success, or an error code propagated from spi_device_transmit()
 static esp_err_t spi_transfer(const uint8_t *tx, uint8_t *rx, size_t len)
 {
     spi_transaction_t txn = {
@@ -438,41 +452,68 @@ static esp_err_t spi_transfer(const uint8_t *tx, uint8_t *rx, size_t len)
     return spi_device_transmit(s_spi_dev, &txn);
 }
 
-/// Pull CS low (active)
+/// This function pulls the LTC6804 CS line low to wake up the isoSPI interface from idle state.
+///
+/// \param[in] None
+/// \return None
 static void cs_low(void)
 {
     gpio_set_level(LTC6804_PIN_CS, 0);
+
+    return;
 }
 
-/// Pull CS high (idle)
+/// This function releases the LTC6804 CS line to high, returning the isoSPI interface to idle state.
+///
+/// \param[in] None
+/// \return None
 static void cs_high(void)
 {
     gpio_set_level(LTC6804_PIN_CS, 1);
+
+    return;
 }
 
-/// This function wakes up the LTC6804 isoSPI interface from idle state.
-/// Holds CS low for at least 10 µs then releases, matching the Arduino reference code.
+/// Wake the LTC6804 communication interface from IDLE using a short CS pulse.
+///
+/// Per datasheet timing, CS is held low for at least tWAKE(IDLE) (minimum 6.7 us),
+/// then released high. An additional short settling delay is inserted before the
+/// next SPI command to improve communication reliability.
+///
+/// \param[in] None
+/// \return None
 static void wakeup_idle(void)
 {
     cs_low();
-    ets_delay_us(10);  // tWAKE idle: min 6.7 µs per datasheet
+    ets_delay_us(10);
     cs_high();
-    ets_delay_us(10);  // Brief settling time before communication
+    ets_delay_us(10);
+
+    return;
 }
 
-/// This function wakes up the LTC6804 from deep sleep state.
-/// Requires CS low for at least 300 µs (tWAKE sleep per datasheet).
+/// Wake the LTC6804 from SLEEP state using an extended CS low pulse.
+///
+/// The datasheet requires CS low for at least tWAKE(SLEEP) (minimum 300 us).
+/// This implementation uses a 1 ms pulse to provide timing margin, then releases
+/// CS high and waits briefly before subsequent communication.
+///
+/// \param[in] None
+/// \return None
 static void wakeup_sleep(void)
 {
     cs_low();
-    ets_delay_us(1000); // 1 ms — generous margin for sleep wakeup
+    ets_delay_us(1000);
     cs_high();
     ets_delay_us(10);
+
+    return;
 }
 
 /// This function sends the ADCV (start cell voltage conversion) command to the LTC6804
 /// in addressed mode.
 ///
+/// \param[in] None
 /// \return ESP_OK on success
 static esp_err_t ltc6804_adcv(void)
 {
@@ -480,7 +521,7 @@ static esp_err_t ltc6804_adcv(void)
 
     wakeup_idle();
 
-    // Build broadcast ADCV command (matching Arduino reference — works for both -1 and -2 variants)
+    // Build broadcast ADCV command
     cmd[0] = s_adcv_cmd[0];
     cmd[1] = s_adcv_cmd[1];
 
@@ -499,8 +540,8 @@ static esp_err_t ltc6804_adcv(void)
 /// This function reads one cell voltage register group from the LTC6804 in addressed mode.
 /// Each register group contains 3 cell voltages (6 data bytes) + 2 PEC bytes = 8 bytes total.
 ///
-/// \param reg   Register group number (1=A, 2=B, 3=C, 4=D)
-/// \param data  Buffer of at least NUM_RX_BYTES (8) bytes to receive raw data
+/// \param[in] reg   Register group number (1=A, 2=B, 3=C, 4=D)
+/// \param[out] data  Buffer of at least NUM_RX_BYTES (8) bytes to receive raw data
 /// \return ESP_OK on success
 static esp_err_t ltc6804_rdcv_reg(uint8_t reg, uint8_t *data)
 {
@@ -525,7 +566,8 @@ static esp_err_t ltc6804_rdcv_reg(uint8_t reg, uint8_t *data)
     uint8_t rx_buf[4 + NUM_RX_BYTES];
 
     memcpy(tx_buf, cmd, 4);
-    memset(&tx_buf[4], 0xFF, NUM_RX_BYTES); // Dummy bytes to clock in response
+    // Dummy bytes to clock in response
+    memset(&tx_buf[4], 0xFF, NUM_RX_BYTES);
 
     wakeup_idle();
 
@@ -545,7 +587,7 @@ static esp_err_t ltc6804_rdcv_reg(uint8_t reg, uint8_t *data)
 /// This function reads all four cell voltage register groups (A–D) from the LTC6804,
 /// parses the 16-bit raw cell codes, and verifies the PEC for each group.
 ///
-/// \param[out] cell_codes  Array of LTC6804_MAX_CELLS uint16_t values (raw ADC codes)
+/// \param[out] cell_codes  Array of ::LTC6804_MAX_CELLS uint16_t values (raw ADC codes)
 /// \return ESP_OK on success, ESP_ERR_INVALID_CRC if any register PEC check fails
 static esp_err_t ltc6804_rdcv(uint16_t cell_codes[LTC6804_MAX_CELLS])
 {
@@ -582,7 +624,7 @@ static esp_err_t ltc6804_rdcv(uint16_t cell_codes[LTC6804_MAX_CELLS])
 
 /// This function writes the 6-byte configuration register to the LTC6804 in addressed mode.
 ///
-/// \param cfg  Pointer to 6 configuration bytes (CFGR0 .. CFGR5)
+/// \param[in] cfg  Pointer to 6 configuration bytes (CFGR0 .. CFGR5)
 /// \return ESP_OK on success
 static esp_err_t ltc6804_wrcfg(const uint8_t cfg[6])
 {
@@ -618,7 +660,7 @@ static esp_err_t ltc6804_wrcfg(const uint8_t cfg[6])
 /// This function reads back the 6-byte configuration register + 2 PEC bytes from the LTC6804
 /// in addressed mode. Used for diagnostics to verify SPI communication.
 ///
-/// \param r_cfg  Buffer of at least 8 bytes to receive CFGR0..CFGR5 + PEC_H + PEC_L
+/// \param[out] r_cfg  Buffer of at least 8 bytes to receive CFGR0..CFGR5 + PEC_H + PEC_L
 /// \return ESP_OK if PEC matches, ESP_ERR_INVALID_CRC otherwise
 static esp_err_t ltc6804_rdcfg(uint8_t r_cfg[8])
 {
@@ -663,7 +705,8 @@ static esp_err_t ltc6804_rdcfg(uint8_t r_cfg[8])
 /// This function sends the ADSTAT (start status group ADC conversion) command to the LTC6804.
 /// Triggers conversion of internal temperature, sum of cells voltage, and power supply voltages.
 ///
-/// \return ESP_OK on success
+/// \param[in] None
+/// \return ESP_OK on success, or an error code propagated from spi_transfer()
 static esp_err_t ltc6804_adstat(void)
 {
     uint8_t cmd[4];
@@ -688,8 +731,8 @@ static esp_err_t ltc6804_adstat(void)
 /// Register A (RDSTATA = 0x10): SOC[15:0], ITMP[15:0], VA[15:0]
 /// Register B (RDSTATB = 0x12): VD[15:0], flags/revision
 ///
-/// \param reg   Register group number (1=A, 2=B)
-/// \param data  Buffer of at least NUM_RX_BYTES (8) bytes to receive raw data
+/// \param[in] reg   Register group number (1=A, 2=B)
+/// \param[out] data  Buffer of at least ::NUM_RX_BYTES (8) bytes to receive raw data
 /// \return ESP_OK on success
 static esp_err_t ltc6804_rdstat_reg(uint8_t reg, uint8_t *data)
 {

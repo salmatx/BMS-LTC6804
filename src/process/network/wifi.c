@@ -98,11 +98,11 @@ esp_err_t bms_wifi_init(void)
         esp_netif_ip_info_t ip_info;
         memset(&ip_info, 0, sizeof(ip_info));
         
-        // Parse static IP (required)
+        // Parse static IP
         if (inet_pton(AF_INET, g_cfg.wifi.static_ip, &ip_info.ip) != 1) {
             BMS_LOGW("Invalid static IP address format, using DHCP");
         } else {
-            // Parse netmask (use default 255.255.255.0 if empty)
+            // Parse netmask, use default 255.255.255.0 if empty or invalid
             if (g_cfg.wifi.netmask[0] == '\0' || strlen(g_cfg.wifi.netmask) == 0) {
                 BMS_LOGI("Netmask not configured, using default %s", DEFAULT_NETMASK);
                 inet_pton(AF_INET, DEFAULT_NETMASK, &ip_info.netmask);
@@ -111,19 +111,19 @@ esp_err_t bms_wifi_init(void)
                 inet_pton(AF_INET, DEFAULT_NETMASK, &ip_info.netmask);
             }
             
-            // Parse gateway (optional - set to 0.0.0.0 if empty)
+            // Parse gateway, use 0.0.0.0 if empty
             if (g_cfg.wifi.gateway[0] == '\0' || strlen(g_cfg.wifi.gateway) == 0) {
                 BMS_LOGI("Gateway not configured, local network only");
                 ip_info.gw.addr = 0;
             } else if (inet_pton(AF_INET, g_cfg.wifi.gateway, &ip_info.gw) != 1) {
-                BMS_LOGW("Invalid gateway format, setting to none");
+                BMS_LOGW("Invalid gateway format, setting to default (0.0.0.0)");
                 ip_info.gw.addr = 0;
             }
             
             // Stop DHCP client (started automatically by esp_netif_create_default_wifi_sta)
             esp_err_t err = esp_netif_dhcpc_stop(netif);
             if (err == ESP_OK || err == ESP_ERR_ESP_NETIF_DHCP_ALREADY_STOPPED) {
-                // Try to set static IP
+                // Set static IP, if it fails, restart DHCP client and continue with DHCP
                 err = esp_netif_set_ip_info(netif, &ip_info);
                 if (err == ESP_OK) {
                     BMS_LOGI("Static IP configured successfully");
@@ -179,7 +179,7 @@ esp_err_t bms_wifi_init(void)
         // Destroy STA netif
         esp_netif_destroy(netif);
         
-        // Create AP network interface (required for DHCP server and IP routing)
+        // Create AP network interface
         esp_netif_t *ap_netif = esp_netif_create_default_wifi_ap();
         if (!ap_netif) {
             BMS_LOGE("Failed to create AP network interface");
@@ -209,7 +209,7 @@ esp_err_t bms_wifi_init(void)
 /// This function checks if WiFi is currently running in AP mode.
 ///
 /// \param None
-/// \return true if in AP mode, false if in STA mode
+/// \return True if in AP mode, false if in STA mode
 bool bms_wifi_is_ap_mode(void)
 {
     return s_is_ap_mode;
@@ -242,6 +242,7 @@ static esp_err_t bms_wifi_start_ap(void)
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap_config));
     ESP_ERROR_CHECK(esp_wifi_start());
 
+    // IP is defaulted from ESP-IDF
     BMS_LOGW("╔══════════════════════════════════════════════════════╗");
     BMS_LOGW("  WiFi AP MODE - Configuration Portal");
     BMS_LOGW("╠══════════════════════════════════════════════════════╣");
@@ -261,13 +262,13 @@ static esp_err_t bms_wifi_start_ap(void)
 }
 
 /// WiFi event handler to manage connection events.
-/// Note that paramter 'arg' is unused and cannot be removed because this function is used as a callback with
+/// Note that paramter  \p arg is unused and cannot be removed because this function is used as a callback with
 /// fixed signature of ESP-IDF event handler.
 ///
-/// \param arg Unused
-/// \param event_base Base of the event
-/// \param event_id ID of the event
-/// \param event_data Data associated with the event
+/// \param[in] arg Unused
+/// \param[in] event_base Base of the event
+/// \param[in] event_id ID of the event
+/// \param[in] event_data Data associated with the event
 /// \return None
 static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
@@ -289,4 +290,6 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
         BMS_LOGW("╚══════════════════════════════════════════════════════╝");
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
     }
+
+    return;
 }

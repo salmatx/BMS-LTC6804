@@ -31,9 +31,3 @@ Projects uses ESP-IDF framework. It is recommended to use sdkconfig settings as 
 **Compiler options**
 
 - Set Optimization Level to Optimize for size (-Os)
-
-**BMS Network Configuration**
-
-- Set Wi-Fi SSID of used AP
-- Set Wi-Fi password of used AP
-- Set MQTT broker URI of used MQTT broker

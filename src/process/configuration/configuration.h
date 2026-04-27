@@ -16,7 +16,7 @@
 /*==============================================================================================================*/
 /*                                               Public Types                                                   */
 /*==============================================================================================================*/
-/// Structure defining the complete runtime configuration.
+/// Structure defining the runtime configuration.
 typedef struct {
     wifi_cfg_t     wifi;        ///< Wi-Fi configuration
     mqtt_cfg_t     mqtt;        ///< MQTT configuration
@@ -30,8 +30,7 @@ typedef struct {
 /*==============================================================================================================*/
 /*                                             Public Variables                                                 */
 /*==============================================================================================================*/
-/// Global runtime configuration (initialized with default values from sdkconfig, then overridden from
-/// configuration file in SPIFFS if present).
+/// Global runtime configuration
 extern configuration_t g_cfg;
 
 /*==============================================================================================================*/

@@ -43,7 +43,7 @@
 /*==============================================================================================================*/
 /*                                            Private Variables                                                 */
 /*==============================================================================================================*/
-/// Message counter for telemetry inclusion (every 10th message)
+/// Message counter for telemetry inclusion into the JSON.
 static uint32_t s_message_counter = 0;
 
 /*==============================================================================================================*/
@@ -55,9 +55,9 @@ static uint32_t s_message_counter = 0;
 /*==============================================================================================================*/
 /// This function serializes one stats window to JSON buffer.
 ///
-/// \param st Pointer to statistics structure to serialize
-/// \param buf Pointer to output buffer
-/// \param buf_size Size of output buffer in bytes
+/// \param[in] st Pointer to statistics structure to serialize
+/// \param[out] buf Pointer to output buffer
+/// \param[in] buf_size Size of output buffer in bytes
 /// \return Length of serialized JSON string on success, -1 on error
 int bms_stats_to_json(const bms_stats_t *st, char *buf, size_t buf_size)
 {

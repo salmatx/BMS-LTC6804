@@ -1,5 +1,5 @@
 /// This module implements inter-core communication for BMS samples using FreeRTOS queues. It is used to pass
-/// BMS samples from Core 1 (real-time processing) to Core 0 (non-real-time communication).
+/// BMS samples from Core 1 to Core 0.
 
 /*==============================================================================================================*/
 /*                                                Includes                                                      */
@@ -33,17 +33,17 @@
 /*==============================================================================================================*/
 /*                                      Public Variables and Constants                                          */
 /*==============================================================================================================*/
-/// Initialized queue handle to NULL
+/// Queue handle for inter-core communication of BMS samples
 QueueHandle_t g_bms_queue = NULL;
 
-/// Initialized spinlock as unlocked
+/// Spinlock initialized as unlocked
 portMUX_TYPE g_bms_queue_spinlock = portMUX_INITIALIZER_UNLOCKED;
 
 /*==============================================================================================================*/
 /*                                       Public Function Definitions                                            */
 /*==============================================================================================================*/
 /// This function initializes the inter-core BMS sample queue. Creates FreeRTOS queue with length
-/// defined by BMS_QUEUE_LEN.
+/// defined by ::BMS_QUEUE_LEN.
 ///
 /// \param None
 /// \return None
@@ -56,10 +56,10 @@ void bms_queue_init(void)
 }
 
 /// This function pushes one BMS sample into the inter-core queue. If the queue is full, the sample is dropped.
-/// This function is intended to be called from Core 1 (producer).
+/// This function is intended to be called from Core 1.
 ///
-/// \param sample Pointer to BMS sample to push
-/// \return true if sample was successfully pushed, false if queue was full or error occurred
+/// \param[in] sample Pointer to BMS sample to push
+/// \return True if sample was successfully pushed, false if queue was full or error occurred
 bool bms_queue_push(const bms_sample_t *sample)
 {
     if (!g_bms_queue || !sample) {
@@ -69,7 +69,7 @@ bool bms_queue_push(const bms_sample_t *sample)
     bool ok = false;
 
     taskENTER_CRITICAL(&g_bms_queue_spinlock);
-    UBaseType_t free_slots = uxQueueSpacesAvailable(g_bms_queue);  // 0 => full [web:107][web:119]
+    UBaseType_t free_slots = uxQueueSpacesAvailable(g_bms_queue);
 
     if (free_slots > 0) {
         if (xQueueSendToBack(g_bms_queue, sample, 0) == pdPASS) {
@@ -82,10 +82,10 @@ bool bms_queue_push(const bms_sample_t *sample)
 }
 
 /// This function pops one BMS sample from the inter-core queue. If the queue is empty, no sample is returned.
-/// This function is intended to be called from Core 0 (consumer).
+/// This function is intended to be called from Core 0.
 ///
-/// \param out Pointer to BMS sample structure to fill
-/// \return true if sample was successfully popped, false if queue was empty or error occurred
+/// \param[out] out Pointer to BMS sample structure to fill
+/// \return True if sample was successfully popped, false if queue was empty or error occurred
 bool bms_queue_pop(bms_sample_t *out)
 {
     if (!g_bms_queue || !out) {

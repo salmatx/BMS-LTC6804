@@ -57,7 +57,7 @@ static char s_reset_msg[RESET_MSG_MAXLEN] = {0};
 /*==============================================================================================================*/
 /*                                       Public Function Definitions                                            */
 /*==============================================================================================================*/
-/// Initialize telemetry module. Caches device ID and software version.
+/// Function initializes telemetry module. It caches device ID and software version.
 ///
 /// \param None
 /// \return None
@@ -83,7 +83,8 @@ void telemetry_init(void)
     BMS_LOGW("Enable CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS in menuconfig");
     #endif
     
-    // If last reset was caused by Task Watchdog, retrieve last 5 error log entries from RTC memory
+    // If last reset was caused by Task Watchdog, retrieve last 5 error log entries from RTC memory.
+    // For other reset reasons, s_reset_msg stays empty
     if (esp_reset_reason() == ESP_RST_TASK_WDT) {
         char entries[BMS_LOG_ENTRY_COUNT][BMS_LOG_ENTRY_MAXLEN];
         int entry_count = 0;
@@ -97,41 +98,46 @@ void telemetry_init(void)
             off += (size_t)written;
         }
     }
-    // For other reset reasons, s_reset_msg stays empty (all zeros from static init)
 
     // Clear RTC log buffer after reading so next boot starts fresh
     bms_log_rtc_clear();
 
     BMS_LOGI("Telemetry initialized: ID=%s, SW=%s", s_device_id, s_sw_version);
+
+    return;
 }
 
-/// Get device unique ID (MAC address as string).
+/// Function gets device unique ID (MAC address as string).
 ///
-/// \param id_buf Buffer to store device ID
-/// \param buf_size Size of buffer
+/// \param[out] id_buf Buffer to store device ID
+/// \param[in] buf_size Size of buffer
 /// \return None
 void telemetry_get_device_id(char *id_buf, size_t buf_size)
 {
     if (id_buf && buf_size > 0) {
         snprintf(id_buf, buf_size, "%s", s_device_id);
     }
+
+    return;
 }
 
-/// Get software version string.
+/// Function gets software version string.
 ///
-/// \param ver_buf Buffer to store software version
-/// \param buf_size Size of buffer
+/// \param[out] ver_buf Buffer to store software version
+/// \param[in] buf_size Size of buffer
 /// \return None
 void telemetry_get_sw_version(char *ver_buf, size_t buf_size)
 {
     if (ver_buf && buf_size > 0) {
         snprintf(ver_buf, buf_size, "%s", s_sw_version);
     }
+
+    return;
 }
 
-/// Collect ESP32 system telemetry.
+/// Function collects ESP32 system telemetry.
 ///
-/// \param telem Pointer to telemetry structure to fill
+/// \param[out] telem Pointer to telemetry structure to fill
 /// \return None
 void telemetry_get_esp32_telemetry(esp32_telemetry_t *telem)
 {
@@ -147,11 +153,13 @@ void telemetry_get_esp32_telemetry(esp32_telemetry_t *telem)
     telem->min_free_heap = esp_get_minimum_free_heap_size();
     telem->reset_reason = (uint8_t)esp_reset_reason();
     snprintf(telem->reset_msg, sizeof(telem->reset_msg), "%s", s_reset_msg);
+
+    return;
 }
 
-/// Get LTC6804 status registers. Returns cached status updated by telemetry_update_ltc6804_status().
+/// Function gets LTC6804 status registers. Returns cached status updated by telemetry_update_ltc6804_status().
 ///
-/// \param status Pointer to status structure to fill
+/// \param[out] status Pointer to status structure to fill
 /// \return None
 void telemetry_get_ltc6804_status(ltc6804_status_t *status)
 {
@@ -160,14 +168,16 @@ void telemetry_get_ltc6804_status(ltc6804_status_t *status)
     taskENTER_CRITICAL(&s_ltc_status_lock);
     *status = s_ltc_status;
     taskEXIT_CRITICAL(&s_ltc_status_lock);
+
+    return;
 }
 
-/// Update cached LTC6804 status. Called from Core 1 after reading status registers.
-/// Parses raw register bytes into the ltc6804_status_t fields.
+/// Function updates cached LTC6804 status. Intended to be called from Core 1 after reading status registers.
+/// Parses raw register bytes into the ::ltc6804_status_t fields.
 ///
-/// \param stata Raw 6 bytes from Status Register Group A (SOC, ITMP, VA)
-/// \param statb Raw 6 bytes from Status Register Group B (VD, cell flags, diag)
-/// \param valid True if the status registers were read successfully
+/// \param[in] stata Raw 6 bytes from Status Register Group A (SOC, ITMP, VA)
+/// \param[in] statb Raw 6 bytes from Status Register Group B (VD, cell flags, diag)
+/// \param[in] valid True if the status registers were read successfully
 /// \return None
 void telemetry_update_ltc6804_status(const uint8_t stata[6], const uint8_t statb[6], bool valid)
 {
@@ -184,15 +194,24 @@ void telemetry_update_ltc6804_status(const uint8_t stata[6], const uint8_t statb
     }
     s_ltc_status.valid = valid;
     taskEXIT_CRITICAL(&s_ltc_status_lock);
+
+    return;
 }
 
 /*==============================================================================================================*/
 /*                                       Private Function Definitions                                           */
 /*==============================================================================================================*/
 /// Uses delta calculation over time for accurate measurement.
+/// Estimate current CPU load from FreeRTOS run-time statistics.
+///
+/// This helper computes load over the interval since the previous call using
+/// delta counters from ::uxTaskGetSystemState: `load = 100 - idle_percent`.
+/// Idle time is obtained by summing run-time counters of tasks at priority 0.
 ///
 /// \param None
-/// \return CPU load percentage (0-100)
+/// \return CPU load in percent (0-100) for the last sampling interval, or 0 when
+///         measurement cannot be computed (first call, allocation failure, no tasks,
+///         or run-time stats disabled)
 static uint8_t get_cpu_load(void)
 {
     #if (configGENERATE_RUN_TIME_STATS == 1)

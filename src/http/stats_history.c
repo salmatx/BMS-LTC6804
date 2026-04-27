@@ -49,24 +49,10 @@ static portMUX_TYPE s_lock = portMUX_INITIALIZER_UNLOCKED;
 /*==============================================================================================================*/
 /*                                       Public Function Definitions                                            */
 /*==============================================================================================================*/
-/// This function initializes the latest statistics sample storage.
-/// Must be called once before any push or send operations.
+/// This function stores the latest JSON-formatted statistics sample, overwriting any previously stored sample.
 ///
-/// \param None
-/// \return ESP_OK always
-esp_err_t bms_stats_hist_init(void)
-{
-    s_latest_len = 0;
-    s_has_sample = false;
-    BMS_LOGI("Stats latest-sample store initialized");
-    return ESP_OK;
-}
-
-/// This function stores the latest JSON-formatted statistics sample,
-/// overwriting any previously stored sample.
-///
-/// \param json Pointer to JSON string
-/// \param len Length of JSON string
+/// \param[in] json Pointer to JSON string
+/// \param[in] len Length of JSON string
 /// \return None
 void bms_stats_hist_push(const char *json, size_t len)
 {
@@ -82,12 +68,14 @@ void bms_stats_hist_push(const char *json, size_t len)
     s_has_sample = true;
 
     taskEXIT_CRITICAL(&s_lock);
+
+    return;
 }
 
 /// This function sends the latest statistics sample as a single JSON object via HTTP response.
 /// Returns JSON "null" if no sample is available yet.
 ///
-/// \param req Pointer to HTTP request structure
+/// \param[in] req Pointer to HTTP request structure
 /// \return ESP_OK on success, otherwise an error code
 esp_err_t bms_stats_hist_send_latest(httpd_req_t *req)
 {
@@ -113,3 +101,7 @@ esp_err_t bms_stats_hist_send_latest(httpd_req_t *req)
 
     return httpd_resp_send(req, tmp, tmplen);
 }
+
+/*==============================================================================================================*/
+/*                                       Private Function Definitions                                           */
+/*==============================================================================================================*/

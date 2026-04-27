@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Entry point for the LTC6804 Telemetry Parser GUI."""
 
 from tkinterdnd2 import TkinterDnD

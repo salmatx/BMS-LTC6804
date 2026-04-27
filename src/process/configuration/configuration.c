@@ -42,7 +42,6 @@ static void json_get_bool(cJSON *obj, const char *key, bool *out);
 /*                                            Private Variables                                                 */
 /*==============================================================================================================*/
 /// Cached JSON string of battery_templates array from config file.
-/// Preserved across load/save so that configuration_save does not lose template data.
 static char *s_battery_templates_json = NULL;
 
 /*==============================================================================================================*/
@@ -51,24 +50,24 @@ static char *s_battery_templates_json = NULL;
 /// Global configuration instance
 configuration_t g_cfg = {
     .wifi = {
-        .ssid = CONFIG_BMS_WIFI_SSID,
-        .pass = CONFIG_BMS_WIFI_PASS,
-        .static_ip = "",
-        .gateway = "",
-        .netmask = "",
+        .ssid       = CONFIG_BMS_WIFI_SSID,
+        .pass       = CONFIG_BMS_WIFI_PASS,
+        .static_ip  = "",
+        .gateway    = "",
+        .netmask    = "",
     },
     .mqtt = {
-        .uri  = CONFIG_BMS_MQTT_BROKER_URI,
+        .uri = CONFIG_BMS_MQTT_BROKER_URI,
     },
     .battery = {
-        .adapter_mode   = BMS_ADAPTER_LTC6804,
-        .num_cells      = 5,
-        .current_enable = false,
-        .temperature_enable = false,
-        .cell_v_min     = 0.5f,
-        .cell_v_max     = 2.0f,
-        .pack_v_min     = 2.5f,
-        .pack_v_max     = 10.0f,
+        .adapter_mode         = BMS_ADAPTER_LTC6804,
+        .num_cells            = 5,
+        .current_enable       = false,
+        .temperature_enable   = false,
+        .cell_v_min           = 0.5f,
+        .cell_v_max           = 2.0f,
+        .pack_v_min           = 2.5f,
+        .pack_v_max           = 10.0f,
         .series_pack_i_min    = 1.0f,
         .series_pack_i_max    = 5.0f
     }
@@ -79,7 +78,7 @@ configuration_t g_cfg = {
 /*==============================================================================================================*/
 /// This function loads the configuration from a JSON file at the specified path into the global configuration instance.
 ///
-/// \param path Path to configuration file
+/// \param[in] path Path to configuration file
 /// \return ESP_OK on success, otherwise an error code
 esp_err_t configuration_load(const char *path)
 {
@@ -158,7 +157,7 @@ esp_err_t configuration_load(const char *path)
         json_get_float(jbatt, "series_pack_i_max", &g_cfg.battery.series_pack_i_max);
     }
 
-    // Cache battery_templates JSON for later use (web UI and re-saving)
+    // Cache battery_templates JSON for later use
     cJSON *jtemplates = cJSON_GetObjectItem(root, "battery_templates");
     if (cJSON_IsArray(jtemplates)) {
         free(s_battery_templates_json);
@@ -176,7 +175,7 @@ esp_err_t configuration_load(const char *path)
 
 /// This function saves the global configuration instance to a JSON file at the specified path.
 ///
-/// \param path Path to configuration file
+/// \param[in] path Path to configuration file
 /// \return ESP_OK on success, otherwise an error code
 esp_err_t configuration_save(const char *path)
 {
@@ -265,13 +264,13 @@ const char *configuration_get_battery_templates_json(void)
 /// If a group with the given category label already exists, the battery is appended to that group.
 /// Otherwise, a new group is created.
 ///
-/// \param id        Unique identifier for the battery (e.g. "custom_1")
-/// \param name      Display name for the battery
-/// \param category  Group label (e.g. "Li-ion NMC/NCA")
-/// \param cell_v_min  Minimum cell voltage
-/// \param cell_v_max  Maximum cell voltage
-/// \param series_pack_i_min Minimum current (discharge, negative)
-/// \param series_pack_i_max Maximum current (charge, positive)
+/// \param[in] id        Unique identifier for the battery
+/// \param[in] name      Display name for the battery
+/// \param[in] category  Bttery group
+/// \param[in] cell_v_min  Minimum cell voltage
+/// \param[in] cell_v_max  Maximum cell voltage
+/// \param[in] series_pack_i_min Minimum current
+/// \param[in] series_pack_i_max Maximum current
 /// \return ESP_OK on success, otherwise an error code
 esp_err_t configuration_add_battery_template(const char *id, const char *name, const char *category,
                                               float cell_v_min, float cell_v_max,
@@ -341,14 +340,15 @@ esp_err_t configuration_add_battery_template(const char *id, const char *name, c
 
 /// This function edits an existing battery template identified by its id.
 /// It first removes the old entry, then adds the updated one.
+/// If the update leaves an empty group, that group is also removed.
 ///
-/// \param id        Unique identifier of the battery to edit
-/// \param name      Updated display name
-/// \param category  Group label (may differ from original to move between groups)
-/// \param cell_v_min  Minimum cell voltage
-/// \param cell_v_max  Maximum cell voltage
-/// \param series_pack_i_min Minimum current
-/// \param series_pack_i_max Maximum current
+/// \param[in] id        Unique identifier of the battery to edit
+/// \param[in] name      Updated display name
+/// \param[in] category  Battery group
+/// \param[in] cell_v_min  Minimum cell voltage
+/// \param[in] cell_v_max  Maximum cell voltage
+/// \param[in] series_pack_i_min Minimum current
+/// \param[in] series_pack_i_max Maximum current
 /// \return ESP_OK on success, otherwise an error code
 esp_err_t configuration_edit_battery_template(const char *id, const char *name, const char *category,
                                               float cell_v_min, float cell_v_max,
@@ -388,7 +388,7 @@ esp_err_t configuration_edit_battery_template(const char *id, const char *name, 
         return ESP_ERR_NOT_FOUND;
     }
 
-    // Remove empty groups left behind
+    // Remove empty groups
     int gsize = cJSON_GetArraySize(templates);
     for (int i = gsize - 1; i >= 0; i--) {
         cJSON *g = cJSON_GetArrayItem(templates, i);
@@ -417,7 +417,7 @@ esp_err_t configuration_edit_battery_template(const char *id, const char *name, 
 /// This function removes a battery template by its id from the cached templates and saves to config file.
 /// If the removal leaves an empty group, that group is also removed.
 ///
-/// \param id Unique identifier of the battery to remove
+/// \param[in] id Unique identifier of the battery to remove
 /// \return ESP_OK on success, otherwise an error code
 esp_err_t configuration_delete_battery_template(const char *id)
 {
@@ -481,12 +481,12 @@ esp_err_t configuration_delete_battery_template(const char *id)
 /*==============================================================================================================*/
 /*                                       Private Function Definitions                                           */
 /*==============================================================================================================*/
-/// This helper function retrieves a string value from a cJSON object by key.
+/// This function retrieves a string value from a cJSON object by key.
 ///
-/// \param obj Pointer to cJSON object
-/// \param key Key of the string item
-/// \param out Output buffer for the string
-/// \param out_sz Size of the output buffer
+/// \param[in] obj Pointer to cJSON object
+/// \param[in] key Key of the string item
+/// \param[out] out Output buffer for the string
+/// \param[out] out_sz Size of the output buffer
 /// \return None
 static void json_get_str(cJSON *obj, const char *key, char *out, size_t out_sz)
 {
@@ -494,13 +494,15 @@ static void json_get_str(cJSON *obj, const char *key, char *out, size_t out_sz)
     if (cJSON_IsString(it) && it->valuestring) {
         snprintf(out, out_sz, "%s", it->valuestring);
     }
+
+    return;
 }
 
-/// This helper function retrieves a float value from a cJSON object by key.
+/// This function retrieves a float value from a cJSON object by key.
 ///
-/// \param obj Pointer to cJSON object
-/// \param key Key of the number item
-/// \param out Pointer to output float variable
+/// \param[in] obj Pointer to cJSON object
+/// \param[in] key Key of the number item
+/// \param[out] out Pointer to output float variable
 /// \return None
 static void json_get_float(cJSON *obj, const char *key, float *out)
 {
@@ -508,13 +510,15 @@ static void json_get_float(cJSON *obj, const char *key, float *out)
     if (cJSON_IsNumber(it)) {
         *out = (float)it->valuedouble;
     }
+
+    return;
 }
 
-/// This helper function retrieves an integer value from a cJSON object by key.
+/// This function retrieves an integer value from a cJSON object by key.
 ///
-/// \param obj Pointer to cJSON object
-/// \param key Key of the number item
-/// \param out Pointer to output int variable
+/// \param[in] obj Pointer to cJSON object
+/// \param[in] key Key of the number item
+/// \param[out] out Pointer to output int variable
 /// \return None
 static void json_get_int(cJSON *obj, const char *key, int *out)
 {
@@ -522,13 +526,15 @@ static void json_get_int(cJSON *obj, const char *key, int *out)
     if (cJSON_IsNumber(it)) {
         *out = it->valueint;
     }
+
+    return;
 }
 
 /// This helper function retrieves a boolean value from a cJSON object by key.
 ///
-/// \param obj Pointer to cJSON object
-/// \param key Key of the boolean item
-/// \param out Pointer to output bool variable
+/// \param[in] obj Pointer to cJSON object
+/// \param[in] key Key of the boolean item
+/// \param[out] out Pointer to output bool variable
 /// \return None
 static void json_get_bool(cJSON *obj, const char *key, bool *out)
 {
@@ -536,4 +542,6 @@ static void json_get_bool(cJSON *obj, const char *key, bool *out)
     if (cJSON_IsBool(it)) {
         *out = cJSON_IsTrue(it) ? true : false;
     }
+
+    return;
 }

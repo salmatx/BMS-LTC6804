@@ -253,7 +253,7 @@ async function refresh() {
   }
 }
 
-// ── Initialisation ──────────────────────────────────────────────────
+// ── Initialization ──────────────────────────────────────────────────
 
 /// Load runtime config, build UI, start refresh loop.
 async function init() {

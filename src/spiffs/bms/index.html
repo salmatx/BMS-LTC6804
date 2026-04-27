@@ -94,6 +94,9 @@
         addRow(tbody, 'Current Measurement', j?.battery?.current_enable !== false
           ? '<strong style="color:green;">Enabled</strong>'
           : '<strong style="color:gray;">Disabled</strong>');
+        addRow(tbody, 'Temperature Measurement', j?.battery?.temperature_enable !== false
+          ? '<strong style="color:green;">Enabled</strong>'
+          : '<strong style="color:gray;">Disabled</strong>');
         addRow(tbody, 'Cell Voltage Min', `${fmt2(j?.battery?.cell_v_min)} <span class="value-unit">V</span>`);
         addRow(tbody, 'Cell Voltage Max', `${fmt2(j?.battery?.cell_v_max)} <span class="value-unit">V</span>`);
         addRow(tbody, 'Pack Voltage Min', `${fmt2(j?.battery?.pack_v_min)} <span class="value-unit">V</span>`);

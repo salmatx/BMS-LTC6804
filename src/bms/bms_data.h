@@ -11,8 +11,7 @@
 /*==============================================================================================================*/
 /*                                               Public Macros                                                  */
 /*==============================================================================================================*/
-/// Maximum number of cells supported by the battery pack (compile-time array size).
-/// Actual number of cells used at runtime is configured via g_cfg.battery.num_cells.
+/// Maximum number of cells supported by the battery pack. Limited by LTC6804 hardware.
 #define BMS_MAX_CELLS 12
 
 /*==============================================================================================================*/
@@ -53,8 +52,8 @@ typedef struct {
 /// This function computes the buffer index for given offset from head. When offset exceeds capacity, wraps around.
 /// If offset is substituted with buf->count, gives index of last valid sample.
 ///
-/// \param buf Pointer to ring buffer structure
-/// \param offset Offset from head
+/// \param[in] buf Pointer to ring buffer structure
+/// \param[in] offset Offset from head
 /// \return Computed buffer index
 static inline size_t bms_buf_index(const bms_sample_buffer_t *buf, size_t offset)
 {

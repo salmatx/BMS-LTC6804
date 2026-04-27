@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Parse LTC6804 telemetry CSV data into a human-readable log file."""
 
 import csv
@@ -79,6 +78,8 @@ def parse_row(row: dict) -> str:
 
     block = (
         f"Time: {time_str}\n"
+        f"\n"
+        f"  [LTC6804 Status Registers]\n"
         f"  SOC (Sum of Cells):  {soc} -> {parse_soc(soc)}\n"
         f"  ITMP (Internal Temp): {itmp} -> {parse_itmp(itmp)}\n"
         f"  VA (Analog Supply):  {va} -> {parse_analog_voltage(va)}\n"
@@ -87,6 +88,8 @@ def parse_row(row: dict) -> str:
         f"{parse_cell_flags(cell_flags)}\n"
         f"  Diagnostics (0x{diag:02X}):\n"
         f"{parse_diag(diag)}\n"
+        f"\n"
+        f"  [ESP32 Telemetry]\n"
         f"  Reset Reason: {reset_reason} -> {parse_reset_reason(reset_reason)}\n"
         f"  Reset Message: {reset_message}\n"
     )

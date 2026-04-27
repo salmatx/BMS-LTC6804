@@ -28,7 +28,7 @@
 #define PT1000_B      -5.775e-7f
 /// Callendar-Van Dusen coefficient C (IEC 60751, used below 0 deg C only)
 #define PT1000_C      -4.183e-12f
-/// ESP32 ADC reference voltage (V)
+/// Assumed voltage reference for PT1000 divider calculations (V)
 #define PT1000_V_REF   3.3f
 /// Reference resistor in voltage divider circuit (Ohms)
 #define PT1000_R_REF   1000.0f
@@ -48,12 +48,12 @@ static esp_err_t ltc6804_adapter_init(void);
 static esp_err_t ltc6804_adapter_read_sample(bms_sample_t *out);
 static float read_current(adc_pin_t pin, float i_min, float i_max);
 static float read_pt1000(adc_pin_t pin);
-static float read_temperature(void);
+static float read_temperature(adc_pin_t pin);
 
 /*==============================================================================================================*/
 /*                                            Private Constants                                                 */
 /*==============================================================================================================*/
-/// Selected adapter instance
+/// Selected adapter instance. Used to switch between demo and LTC6804 adapter.
 static const bms_adapter_t *s_current_adapter = NULL;
 
 /// Demo adapter instance
@@ -108,7 +108,7 @@ esp_err_t bms_ltc6804_adapter_select(void)
 /*==============================================================================================================*/
 /*                                       Private Function Definitions                                           */
 /*==============================================================================================================*/
-/// This function returns a pseudo-random 32-bit unsigned integer using xorshift32 algorithm. Function is used to
+/// This function provides a xorshift random number generator for demo data. Function is used to
 /// generate demo BMS samples.
 ///
 /// \param None
@@ -117,7 +117,7 @@ static uint32_t demo_rand32(void)
 {
     static uint32_t state = 0;
 
-    // Initialize state on first call
+    // Initialize state on first call to nonzero random value
     if (state == 0) {
         // Seed state with hardware random number
         esp_fill_random(&state, sizeof(state));
@@ -139,15 +139,16 @@ static uint32_t demo_rand32(void)
 /// generate demo BMS samples.
 ///
 /// \param None
-/// \return Pseudo-random float in [0, 1)
+/// \return Pseudo-random float
 static float demo_rand01(void)
 {
-    // Get 24 random bits and scale to [0, 1)
+    // Get 24 random bits and scale to [0, 1). The 24-bit mask is used because single-precision
+    //floats have 24 bits of mantissa precision.
     return (demo_rand32() & 0xFFFFFFu) / (float)0x1000000u;
 }
 
-/// This function initializes the demo BMS adapter. Function just logs initialization message and will
-/// be in future replaced with real adapter init.
+/// This function initializes the demo BMS adapter. Function only logs initialization message
+/// because the demo adapter does not require any initialization steps. Initialization is required by interface.
 ///
 /// \param None
 /// \return ESP_OK on success.
@@ -157,11 +158,10 @@ static esp_err_t demo_init(void)
     return ESP_OK;
 }
 
-/// This function reads one demo BMS sample. Generates random per-cell voltages in range
-/// [cell_v_min * 0.8, cell_v_max * 1.2] (80%-120% of configured limits) and random pack current
-/// in range [series_pack_i_min * 1.2, series_pack_i_max * 1.2] so values can occasionally exceed thresholds.
+/// This function reads one demo BMS sample. Generates random per-cell voltages and pack current in range 80%-120%
+/// of configured limits so values can occasionally exceed thresholds. Temperature is generated in range 0-60 deg C.
 ///
-/// \param out Pointer to output sample structure
+/// \param[out] out Pointer to output sample structure
 /// \return ESP_OK on success, otherwise an error code
 static esp_err_t demo_read_sample(bms_sample_t *out)
 {
@@ -204,7 +204,7 @@ static esp_err_t demo_read_sample(bms_sample_t *out)
     return ESP_OK;
 }
 
-/// This function initializes the LTC6804 hardware adapter by calling the LTC6804 ADC module init.
+/// This function initializes the LTC6804 hardware adapter by calling function ltc6804_init().
 ///
 /// \param None
 /// \return ESP_OK on success, otherwise an error code
@@ -219,11 +219,10 @@ static esp_err_t ltc6804_adapter_init(void)
     return ESP_OK;
 }
 
-/// This function reads one BMS sample from the LTC6804 hardware. It reads cell voltages
-/// from the LTC6804 ADC module, sums them for pack voltage, and handles pack current
-/// based on the current_enable configuration flag.
+/// This function reads one BMS sample from the LTC6804 hardware. It reads cell voltages,
+/// sums them for pack voltage, reads pack current and temperature from external ADC channels.
 ///
-/// \param out Pointer to output sample structure
+/// \param[out] out Pointer to output sample structure
 /// \return ESP_OK on success, otherwise an error code
 static esp_err_t ltc6804_adapter_read_sample(bms_sample_t *out)
 {
@@ -231,7 +230,7 @@ static esp_err_t ltc6804_adapter_read_sample(bms_sample_t *out)
         return ESP_ERR_INVALID_ARG;
     }
 
-    // Read cell voltages from LTC6804 (includes internal retries)
+    // Read cell voltages of configured number of cells
     esp_err_t ret = ltc6804_read_cell_voltages(out->cell_v, g_cfg.battery.num_cells);
     if (ret != ESP_OK) {
         return ret;
@@ -246,11 +245,11 @@ static esp_err_t ltc6804_adapter_read_sample(bms_sample_t *out)
 
 
 
-    // Read pack current from current sensor connected to LTC6804
-    out->pack_i = read_current(ADC_PIN_GPIO34, 0, 50); // 0-50A range corresponding to 50 amp LEM HTB 50-P/SP5 sensor
+    // Read pack current from current sensor. Range 0-50A corresponds to 50 amp LEM HTB 50-P/SP5 sensor
+    out->pack_i = read_current(ADC_PIN_GPIO34, 0, 50);
 
     // Read temperature from sensor
-    out->temperature = read_temperature();
+    out->temperature = read_temperature(ADC_PIN_GPIO35);
 
     // Set timestamp
     out->timestamp = xTaskGetTickCount();
@@ -259,12 +258,12 @@ static esp_err_t ltc6804_adapter_read_sample(bms_sample_t *out)
 }
 
 /// This function reads the current from an ADC pin and converts it to a float value in amps using linear mapping.
-/// The mapping assumes that a raw ADC value of 0 corresponds to i_min and a raw ADC value of ADC_RANGE corresponds to i_max.
+/// The mapping assumes that a raw ADC value of 0 corresponds to i_min and a raw ADC value of ::ADC_RANGE corresponds to i_max.
 ///
-/// \param pin ADC pin to read
-/// \param i_min Minimum expected current corresponding to raw ADC value of 0
-/// \param i_max Maximum expected current corresponding to raw ADC value of ADC_RANGE
-/// \return Current in amps corresponding to the raw ADC reading, scaled to the [i_min, i_max] range. If ADC read fails, returns 0.
+/// \param[in] pin ADC pin to read
+/// \param[in] i_min Minimum expected current corresponding to raw ADC value of 0
+/// \param[in] i_max Maximum expected current corresponding to raw ADC value of ::ADC_RANGE
+/// \return Current in amps corresponding to the raw ADC reading. If ADC read fails, returns 0.
 static float read_current(adc_pin_t pin, float i_min, float i_max)
 {
     // Read raw ADC value
@@ -285,7 +284,7 @@ static float read_current(adc_pin_t pin, float i_min, float i_max)
 /// to the specified ADC pin and converts it to temperature in degrees Celsius.
 /// Uses the Callendar-Van Dusen equation (IEC 60751) to convert resistance to temperature.
 ///
-/// \param pin ADC pin connected to the PT1000 voltage divider output
+/// \param[in] pin ADC pin connected to the PT1000 voltage divider output
 /// \return Temperature in degrees Celsius, or 0 if reading fails
 static float read_pt1000(adc_pin_t pin)
 {
@@ -300,7 +299,7 @@ static float read_pt1000(adc_pin_t pin)
     float voltage = (float)raw_value * PT1000_V_REF / (float)ADC_RANGE;
 
     // Calculate PT1000 resistance from voltage divider: R_pt1000 = R_ref * V / (V_ref - V)
-    float denom = PT1000_V_REF - voltage;
+    float denom = PT1000_V_REF - voltage; // (V_ref - V)
     if (denom <= 0.0f) {
         BMS_LOGE("PT1000 voltage divider error: voltage too high");
         return 0;
@@ -324,8 +323,8 @@ static float read_pt1000(adc_pin_t pin)
     // using Newton-Raphson to calculate formula: f(T) = R0*(1 + A*T + B*T^2 + C*(T-100)*T^3)
     if (temperature < 0.0f) {
         float t = temperature; // initial guess from quadratic
-        // Perform Newton-Raphson iterations according to formula x_{n+1} = x_n - f(x_n) / f'(x_n). Max number of iterations is 20.
-        for (int iter = 0; iter < 20; ++iter) {
+        // Perform Newton-Raphson iterations according to formula x_{n+1} = x_n - f(x_n) / f'(x_n). Max number of iterations is 5.
+        for (int iter = 0; iter < 5; ++iter) {
             float t2 = t * t;
             float t3 = t2 * t;
             // f(T) = R0*(1 + A*T + B*T^2 + C*(T-100)*T^3)
@@ -343,8 +342,8 @@ static float read_pt1000(adc_pin_t pin)
             float dt = f / df;
             // x_n - f(x_n) / f'(x_n)
             t -= dt;
-            // Stop iterations if change of temperature is below 0.001 deg C.
-            if (fabsf(dt) < 0.001f) {
+            // Stop iterations if change of temperature is below 0.01 deg C.
+            if (fabsf(dt) < 0.01f) {
                 break;
             }
         }
@@ -357,9 +356,9 @@ static float read_pt1000(adc_pin_t pin)
 /// This function reads the temperature from the PT1000 sensor connected to GPIO35.
 /// Acts as an adapter to allow future switching to a different thermal sensor.
 ///
-/// \param None
+/// \param[in] pin ADC pin for temperature reading
 /// \return Temperature in degrees Celsius
-static float read_temperature(void)
+static float read_temperature(adc_pin_t pin)
 {
-    return read_pt1000(ADC_PIN_GPIO35);
+    return read_pt1000(pin);
 }

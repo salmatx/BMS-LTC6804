@@ -58,8 +58,8 @@ esp_err_t bms_mqtt_init(void)
     esp_mqtt_client_config_t cfg = {
         .broker.address.uri       = g_cfg.mqtt.uri,
         .credentials.client_id    = "esp32-bms",
-        .network.timeout_ms = 30000,
-        .session.keepalive = 60,
+        .network.timeout_ms       = 30000,
+        .session.keepalive        = 60,
     };
 
     // Initialize MQTT client
@@ -92,15 +92,15 @@ bool bms_mqtt_is_connected(void)
     return s_connected;
 }
 
-/// This function publishes a message with QoS 0 (fire-and-forget, no ACK).
+/// This function publishes a message with QoS 0.
 ///
 /// Notes:
 /// 1. This function requires the MQTT client to be connected.
 /// 2. Returns immediately after sending, does not wait for broker response.
 ///
-/// \param topic Pointer to topic string
-/// \param data Pointer to payload buffer
-/// \param len Payload length
+/// \param[in] topic Pointer to topic string
+/// \param[in] data Pointer to payload buffer
+/// \param[in] len Payload length
 /// \return ESP_OK on successful send, otherwise error
 esp_err_t bms_mqtt_publish_qos0(const char *topic, const char *data, int len)
 {
@@ -123,13 +123,13 @@ esp_err_t bms_mqtt_publish_qos0(const char *topic, const char *data, int len)
 /*                                       Private Function Definitions                                           */
 /*==============================================================================================================*/
 /// This function is MQTT event handler. Tracks connection state. Logs connection and disconnection events.
-/// Note that parameters 'handler_args' and 'base' are unused and cannot be removed because this function is used
+/// Note that parameters \p handler_args and \p base are unused and cannot be removed because this function is used
 /// as a callback with fixed signature of ESP-IDF event handler.
 ///
-/// \param handler_args Unused
-/// \param base Unused
-/// \param event_id MQTT event ID
-/// \param event_data Pointer to event data
+/// \param[in] handler_args Unused
+/// \param[in] base Unused
+/// \param[in] event_id MQTT event ID
+/// \param[in] event_data Pointer to event data
 /// \return None
 static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data)
 {
@@ -159,4 +159,6 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
     default:
         break;
     }
+
+    return;
 }

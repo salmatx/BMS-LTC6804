@@ -113,7 +113,7 @@ void fast_core_tasks_delete(void)
         vTaskDelay(pdMS_TO_TICKS(50));
     }
     
-    // Force delete if still running (shouldn't happen)
+    // Force delete if still running
     if (s_fast_core_feeder_handle) {
         BMS_LOGW("Force deleting Fast Core feeder task (didn't exit gracefully)");
         vTaskDelete(s_fast_core_feeder_handle);
@@ -131,6 +131,8 @@ void fast_core_tasks_delete(void)
     s_should_exit = false;
     
     BMS_LOGI("Fast Core tasks cleaned up");
+
+    return;
 }
 
 
@@ -175,7 +177,6 @@ static void fast_core_task()
             s_allow_feeding = false;
         }
 
-        /* Get one demo BMS sample */
         // Read one sample from BMS adapter
         esp_err_t err = bms->read_sample(&sample);
         // On success, push sample into inter-core queue
@@ -215,12 +216,14 @@ static void fast_core_task()
     BMS_LOGI("Fast Core processing task exiting gracefully");
     s_fast_core_task_handle = NULL;
     vTaskDelete(NULL);
+
+    return;
 }
 
 
 
 /// Fast Core TWDT feeder task. This task periodically feeds (resets) the hardware TWDT to prevent timeout.
-/// Feeding is only performed if \ref s_allow_feeding flag is true, otherwise feeding is skipped, allowing TWDT to expire
+/// Feeding is only performed if ::s_allow_feeding flag is true, otherwise feeding is skipped, allowing TWDT to expire
 /// and reset the system.
 ///
 /// \param None
@@ -238,7 +241,7 @@ static void fast_core_feeder_task()
     // Main Fast Core feeder loop. Periodically feed TWDT if allowed.
     while (!s_should_exit)
     {
-        // Variable_allow_feeding indicates whether feeding is allowed. Variable can be set to false
+        // Variable s_allow_feeding indicates whether feeding is allowed. Variable can be set to false
         // by Fast Core tasks on error conditions.
         if (s_allow_feeding) {
             if (bms_wdt_feed_self() != ESP_OK) {
@@ -254,4 +257,6 @@ static void fast_core_feeder_task()
     bms_wdt_unregister_current_task();
     s_fast_core_feeder_handle = NULL;
     vTaskDelete(NULL);
+
+    return;
 }

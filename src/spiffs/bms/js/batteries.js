@@ -7,11 +7,6 @@
  *
  * To add / modify batteries, edit config.json on the SPIFFS filesystem.
  */
-
-/**
- * Flat lookup map: { id -> { cell_v_min, cell_v_max, current_min, current_max } }.
- * Populated at runtime by initBatteryTemplates().
- */
 var BATTERIES = {};
 
 /**

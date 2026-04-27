@@ -130,8 +130,8 @@ esp_err_t bms_wdt_unregister_current_task(void)
     return ESP_OK;
 }
 
-/// This function deinitializes (shuts down) the Task Watchdog Timer (TWDT) subsystem.
-/// Call this when you want to completely disable watchdog monitoring. All tasks must be
+/// This function deinitializes the Task Watchdog Timer (TWDT) subsystem.
+/// Call this to completely disable watchdog monitoring. All tasks must be
 /// unregistered before calling this function, otherwise it will return an error.
 ///
 /// \param None

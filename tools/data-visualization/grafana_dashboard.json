@@ -127,7 +127,7 @@
       "pluginVersion": "12.4.1",
       "targets": [
         {
-          "query": "from(bucket: \"bms\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"mqtt_consumer\")\n  |> filter(fn: (r) =>\n      r[\"_field\"] == \"config_cell_v_min\" or\n      r[\"_field\"] == \"config_cell_v_max\" or\n      r[\"_field\"] == \"config_current_min\" or\n      r[\"_field\"] == \"config_current_max\"\n  )\n  |> last()\n  |> map(fn: (r) => ({\n      \"1 Parameter\": if r._field == \"config_cell_v_min\"  then \"Cell Voltage Min (V)\"\n            else if r._field == \"config_cell_v_max\"  then \"Cell Voltage Max (V)\"\n            else if r._field == \"config_current_min\" then \"Cell Current Min (A)\"\n            else \"Cell Current Max (A)\",\n      \"2 Value\": r._value\n  }))\n  |> keep(columns: [\"1 Parameter\", \"2 Value\"])\n",
+          "query": "from(bucket: \"bms\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"mqtt_consumer\")\n  |> filter(fn: (r) =>\n      r[\"_field\"] == \"config_cell_v_min\" or\n      r[\"_field\"] == \"config_cell_v_max\" or\n      r[\"_field\"] == \"config_series_pack_i_min\" or\n      r[\"_field\"] == \"config_series_pack_i_max\"\n  )\n  |> last()\n  |> map(fn: (r) => ({\n      \"1 Parameter\": if r._field == \"config_cell_v_min\"  then \"Cell Voltage Min (V)\"\n            else if r._field == \"config_cell_v_max\"  then \"Cell Voltage Max (V)\"\n            else if r._field == \"config_series_pack_i_min\" then \"Pack Current Min - Sereies Wiring (A)\"\n            else \"Psck Current Max - Sereies Wiring (A)\",\n      \"2 Value\": r._value\n  }))\n  |> keep(columns: [\"1 Parameter\", \"2 Value\"])\n",
           "refId": "A",
           "datasource": {
             "type": "influxdb",
@@ -210,7 +210,7 @@
       "pluginVersion": "12.4.1",
       "targets": [
         {
-          "query": "mainRow = from(bucket: \"bms\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"mqtt_consumer\")\n  |> filter(fn: (r) => r[\"_field\"] == \"pack_v_avg\")\n  |> last()\n  |> map(fn: (r) => ({\n      \"1 Parameter\": \"Device ID\",\n      \"2 Value\":     r[\"device_id\"]\n  }))\n  |> keep(columns: [\"1 Parameter\", \"2 Value\"])\n\nresetRow = from(bucket: \"bms\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"mqtt_consumer\")\n  |> filter(fn: (r) => r[\"_field\"] == \"telemetry_reset_reason\")\n  |> last()\n  |> map(fn: (r) => ({\n      \"1 Parameter\": \"Reset Reason\",\n      \"2 Value\":\n            if int(v: r._value) == 0  then \"Unknown\"\n       else if int(v: r._value) == 1  then \"Power-on reset\"\n       else if int(v: r._value) == 2  then \"External pin reset\"\n       else if int(v: r._value) == 3  then \"Software reset\"\n       else if int(v: r._value) == 4  then \"Exception / panic\"\n       else if int(v: r._value) == 5  then \"Interrupt watchdog\"\n       else if int(v: r._value) == 6  then \"Task watchdog\"\n       else if int(v: r._value) == 7  then \"Other watchdog\"\n       else if int(v: r._value) == 8  then \"Deep sleep exit\"\n       else if int(v: r._value) == 9  then \"Brownout\"\n       else if int(v: r._value) == 10 then \"SDIO reset\"\n       else \"Unknown (\" + string(v: int(v: r._value)) + \")\"\n  }))\n  |> keep(columns: [\"1 Parameter\", \"2 Value\"])\n\ntelemetryRows = from(bucket: \"bms\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"mqtt_consumer\")\n  |> filter(fn: (r) =>\n      r[\"_field\"] == \"telemetry_sw_version\"     or\n      r[\"_field\"] == \"telemetry_cpu_load\"       or\n      r[\"_field\"] == \"telemetry_free_heap\"      or\n      r[\"_field\"] == \"telemetry_min_heap\"       or\n      r[\"_field\"] == \"telemetry_ltc_soc\"        or\n      r[\"_field\"] == \"telemetry_ltc_itmp\"       or\n      r[\"_field\"] == \"telemetry_ltc_va\"         or\n      r[\"_field\"] == \"telemetry_ltc_vd\"         or\n      r[\"_field\"] == \"telemetry_ltc_cell_flags\" or\n      r[\"_field\"] == \"telemetry_ltc_diag\"\n  )\n  |> last()\n  |> map(fn: (r) => ({\n      \"1 Parameter\": if r._field == \"telemetry_sw_version\"     then \"SW Version\"\n            else if r._field == \"telemetry_cpu_load\"           then \"CPU Load (%)\"\n            else if r._field == \"telemetry_free_heap\"          then \"Free Heap (B)\"\n            else if r._field == \"telemetry_min_heap\"           then \"Min Free Heap (B)\"\n            else if r._field == \"telemetry_ltc_soc\"            then \"LTC SOC\"\n            else if r._field == \"telemetry_ltc_itmp\"           then \"LTC Temp (raw)\"\n            else if r._field == \"telemetry_ltc_va\"             then \"LTC Va (mV)\"\n            else if r._field == \"telemetry_ltc_vd\"             then \"LTC Vd (mV)\"\n            else if r._field == \"telemetry_ltc_cell_flags\"     then \"LTC Cell Flags\"\n            else                                                    \"LTC Diag\",\n      \"2 Value\": string(v: r._value)\n  }))\n  |> keep(columns: [\"1 Parameter\", \"2 Value\"])\n\nunion(tables: [mainRow, resetRow, telemetryRows])\n  |> sort(columns: [\"1 Parameter\"])\n",
+          "query": "// 1. Get the absolute newest timestamp from a single reliable field\ntTimeArr = from(bucket: \"bms\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"mqtt_consumer\")\n  |> filter(fn: (r) => r[\"_field\"] == \"telemetry_cpu_load\") // Anchor field\n  |> last()\n  |> findColumn(fn: (key) => true, column: \"_time\")\n\ntTime = if length(arr: tTimeArr) > 0 then tTimeArr[0] else now()\n\n// 2. Main Row (Device ID)\nmainRow = from(bucket: \"bms\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"mqtt_consumer\")\n  |> filter(fn: (r) => r[\"_field\"] == \"pack_v_avg\")\n  |> last()\n  |> map(fn: (r) => ({\n      \"1 Parameter\": \"Device ID\",\n      \"2 Value\":     r[\"device_id\"]\n  }))\n  |> keep(columns: [\"1 Parameter\", \"2 Value\"])\n\n// 3. Reset Reason (Forced to match the exact newest timestamp)\nresetRow = from(bucket: \"bms\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"mqtt_consumer\")\n  |> filter(fn: (r) => r[\"_field\"] == \"telemetry_reset_reason\")\n  |> filter(fn: (r) => r._time == tTime) // MUST match the newest frame time\n  |> map(fn: (r) => ({\n      \"1 Parameter\": \"Reset Reason\",\n      \"2 Value\":\n            if int(v: r._value) == 0  then \"Unknown\"\n       else if int(v: r._value) == 1  then \"Power-on reset\"\n       else if int(v: r._value) == 2  then \"External pin reset\"\n       else if int(v: r._value) == 3  then \"Software reset\"\n       else if int(v: r._value) == 4  then \"Exception / panic\"\n       else if int(v: r._value) == 5  then \"Interrupt watchdog\"\n       else if int(v: r._value) == 6  then \"Task watchdog\"\n       else if int(v: r._value) == 7  then \"Other watchdog\"\n       else if int(v: r._value) == 8  then \"Deep sleep exit\"\n       else if int(v: r._value) == 9  then \"Brownout\"\n       else if int(v: r._value) == 10 then \"SDIO reset\"\n       else \"Unknown (\" + string(v: int(v: r._value)) + \")\"\n  }))\n  |> keep(columns: [\"1 Parameter\", \"2 Value\"])\n\n// 4. Other Telemetry Rows (Forced to match the exact newest timestamp)\ntelemetryRows = from(bucket: \"bms\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"mqtt_consumer\")\n  |> filter(fn: (r) =>\n      r[\"_field\"] == \"telemetry_sw_version\"     or\n      r[\"_field\"] == \"telemetry_cpu_load\"       or\n      r[\"_field\"] == \"telemetry_free_heap\"      or\n      r[\"_field\"] == \"telemetry_min_heap\"       or\n      r[\"_field\"] == \"telemetry_ltc_soc\"        or\n      r[\"_field\"] == \"telemetry_ltc_itmp\"       or\n      r[\"_field\"] == \"telemetry_ltc_va\"         or\n      r[\"_field\"] == \"telemetry_ltc_vd\"         or\n      r[\"_field\"] == \"telemetry_ltc_cell_flags\" or\n      r[\"_field\"] == \"telemetry_ltc_diag\"       or\n      r[\"_field\"] == \"telemetry_reset_msg\"\n  )\n  |> filter(fn: (r) => r._time == tTime) // MUST match the newest frame time\n  |> map(fn: (r) => ({\n      \"1 Parameter\": if r._field == \"telemetry_sw_version\"     then \"SW Version\"\n            else if r._field == \"telemetry_cpu_load\"           then \"CPU Load (%)\"\n            else if r._field == \"telemetry_free_heap\"          then \"Free Heap (B)\"\n            else if r._field == \"telemetry_min_heap\"           then \"Min Free Heap (B)\"\n            else if r._field == \"telemetry_reset_msg\"          then \"Reset Message\"\n            else if r._field == \"telemetry_ltc_soc\"            then \"LTC SOC\"\n            else if r._field == \"telemetry_ltc_itmp\"           then \"LTC Temp (raw)\"\n            else if r._field == \"telemetry_ltc_va\"             then \"LTC Va (mV)\"\n            else if r._field == \"telemetry_ltc_vd\"             then \"LTC Vd (mV)\"\n            else if r._field == \"telemetry_ltc_cell_flags\"     then \"LTC Cell Flags\"\n            else                                                    \"LTC Diag\",\n      \"2 Value\": string(v: r._value)\n  }))\n  |> keep(columns: [\"1 Parameter\", \"2 Value\"])\n\nunion(tables: [mainRow, resetRow, telemetryRows])\n  |> sort(columns: [\"1 Parameter\"])",
           "refId": "A",
           "datasource": {
             "type": "influxdb",
@@ -294,7 +294,7 @@
       "pluginVersion": "12.4.1",
       "targets": [
         {
-          "query": "from(bucket: \"bms\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"mqtt_consumer\")\n  |> filter(fn: (r) =>\n      r[\"_field\"] == \"telemetry_ltc_soc\"        or\n      r[\"_field\"] == \"telemetry_ltc_itmp\"       or\n      r[\"_field\"] == \"telemetry_ltc_va\"         or\n      r[\"_field\"] == \"telemetry_ltc_vd\"         or\n      r[\"_field\"] == \"telemetry_ltc_cell_flags\" or\n      r[\"_field\"] == \"telemetry_ltc_diag\"       or\n      r[\"_field\"] == \"telemetry_reset_reason\"\n  )\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> keep(columns: [\n      \"_time\",\n      \"telemetry_ltc_soc\",\n      \"telemetry_ltc_itmp\",\n      \"telemetry_ltc_va\",\n      \"telemetry_ltc_vd\",\n      \"telemetry_ltc_cell_flags\",\n      \"telemetry_ltc_diag\",\n      \"telemetry_reset_reason\"\n  ])\n  |> sort(columns: [\"_time\"], desc: false)\n",
+          "query": "from(bucket: \"bms\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"mqtt_consumer\")\n  |> filter(fn: (r) =>\n      r[\"_field\"] == \"telemetry_ltc_soc\"        or\n      r[\"_field\"] == \"telemetry_ltc_itmp\"       or\n      r[\"_field\"] == \"telemetry_ltc_va\"         or\n      r[\"_field\"] == \"telemetry_ltc_vd\"         or\n      r[\"_field\"] == \"telemetry_ltc_cell_flags\" or\n      r[\"_field\"] == \"telemetry_ltc_diag\"       or\n      r[\"_field\"] == \"telemetry_reset_reason\"   or\n      r[\"_field\"] == \"telemetry_reset_msg\" \n  )\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> keep(columns: [\n      \"_time\",\n      \"telemetry_ltc_soc\",\n      \"telemetry_ltc_itmp\",\n      \"telemetry_ltc_va\",\n      \"telemetry_ltc_vd\",\n      \"telemetry_ltc_cell_flags\",\n      \"telemetry_ltc_diag\",\n      \"telemetry_reset_reason\",\n      \"telemetry_reset_msg\"\n  ])\n  |> sort(columns: [\"_time\"], desc: false)\n",
           "refId": "A",
           "datasource": {
             "type": "influxdb",
@@ -381,7 +381,7 @@
             "type": "influxdb",
             "uid": "${DS_BMS-MQTT}"
           },
-          "query": "from(bucket: \"bms\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"mqtt_consumer\")\n  |> filter(fn: (r) => r[\"_field\"] =~ /^cell_v_avg_\\d+$/)\n  |> last()\n  |> group()\n  |> map(fn: (r) => ({\n      _time:  r._time,\n      _field: if r._field == \"cell_v_avg_0\"  then \"Cell 0\"\n         else if r._field == \"cell_v_avg_1\"  then \"Cell 1\"\n         else if r._field == \"cell_v_avg_2\"  then \"Cell 2\"\n         else if r._field == \"cell_v_avg_3\"  then \"Cell 3\"\n         else if r._field == \"cell_v_avg_4\"  then \"Cell 4\"\n         else if r._field == \"cell_v_avg_5\"  then \"Cell 5\"\n         else if r._field == \"cell_v_avg_6\"  then \"Cell 6\"\n         else if r._field == \"cell_v_avg_7\"  then \"Cell 7\"\n         else if r._field == \"cell_v_avg_8\"  then \"Cell 8\"\n         else if r._field == \"cell_v_avg_9\"  then \"Cell 9\"\n         else if r._field == \"cell_v_avg_10\" then \"Cell 10\"\n         else \"Cell 11\",\n      _value: r._value\n  }))\n",
+          "query": "lastData = from(bucket: \"bms\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"mqtt_consumer\")\n  |> filter(fn: (r) => r[\"_field\"] =~ /^cell_v_avg_\\d+$/)\n  |> last()\n\ntimeArr = lastData\n  |> group()\n  |> sort(columns: [\"_time\"], desc: true)\n  |> limit(n: 1)\n  |> findColumn(fn: (key) => true, column: \"_time\")\n\ntargetTime = if length(arr: timeArr) > 0 then timeArr[0] else now()\n\nlastData\n  |> filter(fn: (r) => r._time == targetTime)\n  |> group()\n  |> map(fn: (r) => ({\n      _time:  r._time,\n      _field: if r._field == \"cell_v_avg_0\"  then \"Cell 0\"\n         else if r._field == \"cell_v_avg_1\"  then \"Cell 1\"\n         else if r._field == \"cell_v_avg_2\"  then \"Cell 2\"\n         else if r._field == \"cell_v_avg_3\"  then \"Cell 3\"\n         else if r._field == \"cell_v_avg_4\"  then \"Cell 4\"\n         else if r._field == \"cell_v_avg_5\"  then \"Cell 5\"\n         else if r._field == \"cell_v_avg_6\"  then \"Cell 6\"\n         else if r._field == \"cell_v_avg_7\"  then \"Cell 7\"\n         else if r._field == \"cell_v_avg_8\"  then \"Cell 8\"\n         else if r._field == \"cell_v_avg_9\"  then \"Cell 9\"\n         else if r._field == \"cell_v_avg_10\" then \"Cell 10\"\n         else \"Cell 11\",\n      _value: r._value\n  }))",
           "refId": "A"
         }
       ],
@@ -424,6 +424,11 @@
                   "color": "dark-red",
                   "index": 2,
                   "text": "Above limit"
+                },
+                "4": {
+                  "color": "orange",
+                  "index": 3,
+                  "text": "No data"
                 }
               },
               "type": "value"
@@ -475,7 +480,7 @@
       "pluginVersion": "12.4.1",
       "targets": [
         {
-          "query": "from(bucket: \"bms\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"mqtt_consumer\")\n  |> filter(fn: (r) => r[\"_field\"] == \"cell_errors\")\n  |> last()\n  |> map(fn: (r) => {\n      e       = uint(v: int(v: r._value))\n      b0      = uint(v: 0)\n      b2      = uint(v: 2)\n      b4      = uint(v: 4)\n      u1      = uint(v: 1)\n      u2      = uint(v: 2)\n      u3      = uint(v: 3)\n\n      shifted = e / b2\n\n      c0  = (shifted / uint(v: 1))       % b4\n      c1  = (shifted / uint(v: 4))       % b4\n      c2  = (shifted / uint(v: 16))      % b4\n      c3  = (shifted / uint(v: 64))      % b4\n      c4  = (shifted / uint(v: 256))     % b4\n      c5  = (shifted / uint(v: 1024))    % b4\n      c6  = (shifted / uint(v: 4096))    % b4\n      c7  = (shifted / uint(v: 16384))   % b4\n      c8  = (shifted / uint(v: 65536))   % b4\n      c9  = (shifted / uint(v: 262144))  % b4\n      c10 = (shifted / uint(v: 1048576)) % b4\n      c11 = (shifted / uint(v: 4194304)) % b4\n\n      pack_uc = (e / uint(v: 33554432)) % b2\n      pack_oc = (e / uint(v: 67108864)) % b2\n\n      // Return wide row — one column per cell/error\n      return {\n        _time:             r._time,\n        \"Cell 0 Voltage\":  if c0  == u1 then 1.0 else if c0  == u2 then 2.0 else if c0  == u3 then 3.0 else 0.0,\n        \"Cell 1 Voltage\":  if c1  == u1 then 1.0 else if c1  == u2 then 2.0 else if c1  == u3 then 3.0 else 0.0,\n        \"Cell 2 Voltage\":  if c2  == u1 then 1.0 else if c2  == u2 then 2.0 else if c2  == u3 then 3.0 else 0.0,\n        \"Cell 3 Voltage\":  if c3  == u1 then 1.0 else if c3  == u2 then 2.0 else if c3  == u3 then 3.0 else 0.0,\n        \"Cell 4 Voltage\":  if c4  == u1 then 1.0 else if c4  == u2 then 2.0 else if c4  == u3 then 3.0 else 0.0,\n        \"Cell 5 Voltage\":  if c5  == u1 then 1.0 else if c5  == u2 then 2.0 else if c5  == u3 then 3.0 else 0.0,\n        \"Cell 6 Voltage\":  if c6  == u1 then 1.0 else if c6  == u2 then 2.0 else if c6  == u3 then 3.0 else 0.0,\n        \"Cell 7 Voltage\":  if c7  == u1 then 1.0 else if c7  == u2 then 2.0 else if c7  == u3 then 3.0 else 0.0,\n        \"Cell 8 Voltage\":  if c8  == u1 then 1.0 else if c8  == u2 then 2.0 else if c8  == u3 then 3.0 else 0.0,\n        \"Cell 9 Voltage\":  if c9  == u1 then 1.0 else if c9  == u2 then 2.0 else if c9  == u3 then 3.0 else 0.0,\n        \"Cell 10 Voltage\": if c10 == u1 then 1.0 else if c10 == u2 then 2.0 else if c10 == u3 then 3.0 else 0.0,\n        \"Cell 11 Voltage\": if c11 == u1 then 1.0 else if c11 == u2 then 2.0 else if c11 == u3 then 3.0 else 0.0,\n        \"Pack Current\":    if pack_uc == u1 then 1.0 else if pack_oc == u1 then 2.0 else 0.0\n      }\n  })\n",
+          "query": "lastCells = from(bucket: \"bms\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"mqtt_consumer\")\n  |> filter(fn: (r) => r[\"_field\"] =~ /^cell_v_avg_\\d+$/)\n  |> last()\n\ntimeArr = lastCells\n  |> group()\n  |> sort(columns: [\"_time\"], desc: true)\n  |> limit(n: 1)\n  |> findColumn(fn: (key) => true, column: \"_time\")\n\ntargetTime = if length(arr: timeArr) > 0 then timeArr[0] else now()\n\ncellsQuery = lastCells\n  |> filter(fn: (r) => r._time == targetTime) // Filter out old inactive cells\n  |> group()\n  |> count(column: \"_value\")\n  |> findColumn(fn: (key) => true, column: \"_value\")\n\nnc = if length(arr: cellsQuery) > 0 then cellsQuery[0] else 0\n\nfrom(bucket: \"bms\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"mqtt_consumer\")\n  |> filter(fn: (r) => r[\"_field\"] == \"cell_errors\")\n  |> last()\n  |> map(fn: (r) => {\n      e       = uint(v: int(v: r._value))\n      b2      = uint(v: 2)\n      b4      = uint(v: 4)\n      u1      = uint(v: 1)\n      u2      = uint(v: 2)\n      u3      = uint(v: 3)\n      nodata  = 4.0\n\n      shifted = e / b2\n\n      c0  = (shifted / uint(v: 1))       % b4\n      c1  = (shifted / uint(v: 4))       % b4\n      c2  = (shifted / uint(v: 16))      % b4\n      c3  = (shifted / uint(v: 64))      % b4\n      c4  = (shifted / uint(v: 256))     % b4\n      c5  = (shifted / uint(v: 1024))    % b4\n      c6  = (shifted / uint(v: 4096))    % b4\n      c7  = (shifted / uint(v: 16384))   % b4\n      c8  = (shifted / uint(v: 65536))   % b4\n      c9  = (shifted / uint(v: 262144))  % b4\n      c10 = (shifted / uint(v: 1048576)) % b4\n      c11 = (shifted / uint(v: 4194304)) % b4\n\n      pack_uc = (e / uint(v: 33554432)) % b2\n      pack_oc = (e / uint(v: 67108864)) % b2\n\n      return {\n        _time:             r._time,\n        \"Cell 0 Voltage\":  if nc <  1 then nodata else if c0  == u1 then 1.0 else if c0  == u2 then 2.0 else if c0  == u3 then nodata else 0.0,\n        \"Cell 1 Voltage\":  if nc <  2 then nodata else if c1  == u1 then 1.0 else if c1  == u2 then 2.0 else if c1  == u3 then nodata else 0.0,\n        \"Cell 2 Voltage\":  if nc <  3 then nodata else if c2  == u1 then 1.0 else if c2  == u2 then 2.0 else if c2  == u3 then nodata else 0.0,\n        \"Cell 3 Voltage\":  if nc <  4 then nodata else if c3  == u1 then 1.0 else if c3  == u2 then 2.0 else if c3  == u3 then nodata else 0.0,\n        \"Cell 4 Voltage\":  if nc <  5 then nodata else if c4  == u1 then 1.0 else if c4  == u2 then 2.0 else if c4  == u3 then nodata else 0.0,\n        \"Cell 5 Voltage\":  if nc <  6 then nodata else if c5  == u1 then 1.0 else if c5  == u2 then 2.0 else if c5  == u3 then nodata else 0.0,\n        \"Cell 6 Voltage\":  if nc <  7 then nodata else if c6  == u1 then 1.0 else if c6  == u2 then 2.0 else if c6  == u3 then nodata else 0.0,\n        \"Cell 7 Voltage\":  if nc <  8 then nodata else if c7  == u1 then 1.0 else if c7  == u2 then 2.0 else if c7  == u3 then nodata else 0.0,\n        \"Cell 8 Voltage\":  if nc <  9 then nodata else if c8  == u1 then 1.0 else if c8  == u2 then 2.0 else if c8  == u3 then nodata else 0.0,\n        \"Cell 9 Voltage\":  if nc < 10 then nodata else if c9  == u1 then 1.0 else if c9  == u2 then 2.0 else if c9  == u3 then nodata else 0.0,\n        \"Cell 10 Voltage\": if nc < 11 then nodata else if c10 == u1 then 1.0 else if c10 == u2 then 2.0 else if c10 == u3 then nodata else 0.0,\n        \"Cell 11 Voltage\": if nc < 12 then nodata else if c11 == u1 then 1.0 else if c11 == u2 then 2.0 else if c11 == u3 then nodata else 0.0,\n        \"Pack Current (Series Wiring)\":    if pack_uc == u1 then 1.0 else if pack_oc == u1 then 2.0 else 0.0\n      }\n  })",
           "refId": "A",
           "datasource": {
             "type": "influxdb",
@@ -511,7 +516,7 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 12,
+        "w": 24,
         "x": 0,
         "y": 26
       },
@@ -543,7 +548,7 @@
       "pluginVersion": "12.4.1",
       "targets": [
         {
-          "query": "from(bucket: \"bms\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"mqtt_consumer\")\n  |> filter(fn: (r) =>\n      r[\"_field\"] == \"pack_v_avg\" or\n      r[\"_field\"] == \"pack_i_avg\"\n  )\n  |> last()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> map(fn: (r) => ({\n      _time:          r._time,\n      \"1 Pack Voltage\": r.pack_v_avg,\n      \"2 Pack Current\": r.pack_i_avg,\n      \"3 Power\":        r.pack_v_avg * r.pack_i_avg\n  }))\n  |> keep(columns: [\"_time\", \"1 Pack Voltage\", \"2 Pack Current\", \"3 Power\"])\n",
+          "query": "from(bucket: \"bms\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"mqtt_consumer\")\n  |> filter(fn: (r) =>\n      r[\"_field\"] == \"pack_v_avg\" or\n      r[\"_field\"] == \"pack_i_avg\" or\n      r[\"_field\"] == \"temperature_avg\"\n  )\n  |> last()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> map(fn: (r) => ({\n      _time:                           r._time,\n      \"1 Pack Voltage\":               r.pack_v_avg,\n      \"2 Pack Current (Series Wiring)\": r.pack_i_avg,\n      \"3 Power\":                      r.pack_v_avg * r.pack_i_avg,\n      \"4 Temperature\":                r.temperature_avg\n  }))\n  |> keep(columns: [\n      \"_time\",\n      \"1 Pack Voltage\",\n      \"2 Pack Current (Series Wiring)\",\n      \"3 Power\",\n      \"4 Temperature\"\n  ])",
           "refId": "A",
           "datasource": {
             "type": "influxdb",
@@ -569,7 +574,10 @@
             "renameByName": {
               "1 Pack Voltage": "Pack Voltage (V)",
               "2 Pack Current": "Pack Current (A)",
-              "3 Power": "Power (W)"
+              "2 Pack Current (Sereis Wiring)": "Pack Current (Series Wiring)",
+              "2 Pack Current (Series Wiring)": "Pack Current (Series Wiring)",
+              "3 Power": "Power (W)",
+              "4 Temperature": "Temperature (deg C)"
             }
           }
         }
@@ -764,7 +772,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "Pack Current"
+              "options": "Pack Current (Series Wiring)"
             },
             "properties": [
               {
@@ -790,6 +798,22 @@
               {
                 "id": "custom.axisLabel",
                 "value": "Power (W)"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Temperature"
+            },
+            "properties": [
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.axisLabel",
+                "value": "Temperature (deg C)"
               }
             ]
           }
@@ -818,7 +842,7 @@
       "pluginVersion": "12.4.1",
       "targets": [
         {
-          "query": "from(bucket: \"bms\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"mqtt_consumer\")\n  |> filter(fn: (r) =>\n      r[\"_field\"] == \"pack_v_avg\" or\n      r[\"_field\"] == \"pack_i_avg\"\n  )\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> map(fn: (r) => ({\n      _time:          r._time,\n      \"Pack Voltage\": r.pack_v_avg,\n      \"Pack Current\": r.pack_i_avg,\n      \"Pack Power\":   r.pack_v_avg * r.pack_i_avg\n  }))\n  |> keep(columns: [\"_time\", \"Pack Voltage\", \"Pack Current\", \"Pack Power\"])\n",
+          "query": "from(bucket: \"bms\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"mqtt_consumer\")\n  |> filter(fn: (r) =>\n      r[\"_field\"] == \"pack_v_avg\" or\n      r[\"_field\"] == \"pack_i_avg\" or\n      r[\"_field\"] == \"temperature_avg\"\n  )\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> map(fn: (r) => ({\n      _time:                          r._time,\n      \"Pack Voltage\":                 r.pack_v_avg,\n      \"Pack Current (Series Wiring)\": r.pack_i_avg,\n      \"Pack Power\":                   r.pack_v_avg * r.pack_i_avg,\n      \"Temperature\":                  r.temperature_avg\n  }))\n  |> keep(columns: [\n      \"_time\",\n      \"Pack Voltage\",\n      \"Pack Current (Series Wiring)\",\n      \"Pack Power\",\n      \"Temperature\"\n  ])",
           "refId": "A",
           "datasource": {
             "type": "influxdb",
@@ -860,6 +884,7 @@
             "lineWidth": 1,
             "pointSize": 5,
             "scaleDistribution": {
+              "linearThreshold": 1,
               "log": 2,
               "type": "symlog"
             },
@@ -891,6 +916,11 @@
                   "color": "dark-red",
                   "index": 1,
                   "text": "Above limit"
+                },
+                "4": {
+                  "color": "orange",
+                  "index": 3,
+                  "text": "No data"
                 }
               },
               "type": "value"
@@ -931,7 +961,7 @@
       "pluginVersion": "12.4.1",
       "targets": [
         {
-          "query": "from(bucket: \"bms\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"mqtt_consumer\")\n  |> filter(fn: (r) => r[\"_field\"] == \"cell_errors\")\n  |> aggregateWindow(every: v.windowPeriod, fn: max, createEmpty: false)\n  |> map(fn: (r) => {\n      e       = uint(v: int(v: r._value))\n      b2      = uint(v: 2)\n      b4      = uint(v: 4)\n      u1      = uint(v: 1)\n      u2      = uint(v: 2)\n      u3      = uint(v: 3)\n\n      shifted = e / b2\n\n      c0  = (shifted / uint(v: 1))       % b4\n      c1  = (shifted / uint(v: 4))       % b4\n      c2  = (shifted / uint(v: 16))      % b4\n      c3  = (shifted / uint(v: 64))      % b4\n      c4  = (shifted / uint(v: 256))     % b4\n      c5  = (shifted / uint(v: 1024))    % b4\n      c6  = (shifted / uint(v: 4096))    % b4\n      c7  = (shifted / uint(v: 16384))   % b4\n      c8  = (shifted / uint(v: 65536))   % b4\n      c9  = (shifted / uint(v: 262144))  % b4\n      c10 = (shifted / uint(v: 1048576)) % b4\n      c11 = (shifted / uint(v: 4194304)) % b4\n\n      pack_uc = (e / uint(v: 33554432)) % b2\n      pack_oc = (e / uint(v: 67108864)) % b2\n\n      return {\n        _time:          r._time,\n        \"Cell 0\":       if c0  == u1 then 1.0 else if c0  == u2 then 2.0 else if c0  == u3 then 3.0 else 0.0,\n        \"Cell 1\":       if c1  == u1 then 1.0 else if c1  == u2 then 2.0 else if c1  == u3 then 3.0 else 0.0,\n        \"Cell 2\":       if c2  == u1 then 1.0 else if c2  == u2 then 2.0 else if c2  == u3 then 3.0 else 0.0,\n        \"Cell 3\":       if c3  == u1 then 1.0 else if c3  == u2 then 2.0 else if c3  == u3 then 3.0 else 0.0,\n        \"Cell 4\":       if c4  == u1 then 1.0 else if c4  == u2 then 2.0 else if c4  == u3 then 3.0 else 0.0,\n        \"Cell 5\":       if c5  == u1 then 1.0 else if c5  == u2 then 2.0 else if c5  == u3 then 3.0 else 0.0,\n        \"Cell 6\":       if c6  == u1 then 1.0 else if c6  == u2 then 2.0 else if c6  == u3 then 3.0 else 0.0,\n        \"Cell 7\":       if c7  == u1 then 1.0 else if c7  == u2 then 2.0 else if c7  == u3 then 3.0 else 0.0,\n        \"Cell 8\":       if c8  == u1 then 1.0 else if c8  == u2 then 2.0 else if c8  == u3 then 3.0 else 0.0,\n        \"Cell 9\":       if c9  == u1 then 1.0 else if c9  == u2 then 2.0 else if c9  == u3 then 3.0 else 0.0,\n        \"Cell 10\":      if c10 == u1 then 1.0 else if c10 == u2 then 2.0 else if c10 == u3 then 3.0 else 0.0,\n        \"Cell 11\":      if c11 == u1 then 1.0 else if c11 == u2 then 2.0 else if c11 == u3 then 3.0 else 0.0,\n        \"Pack Current\": if pack_uc == u1 then 1.0 else if pack_oc == u1 then 2.0 else 0.0\n      }\n  })\n",
+          "query": "// 1. Safely find the number of distinct cell_v_avg fields for the time range\ncellsQuery = from(bucket: \"bms\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"mqtt_consumer\")\n  |> filter(fn: (r) => r[\"_field\"] =~ /^cell_v_avg_\\d+$/)\n  |> group()                     \n  |> distinct(column: \"_field\")  \n  |> count(column: \"_value\")     \n  |> findColumn(fn: (key) => true, column: \"_value\")\n\n// Extract the count safely (defaults to 0 if no data exists)\nnc = if length(arr: cellsQuery) > 0 then cellsQuery[0] else 0\n\n// 2. Main time-series query\nfrom(bucket: \"bms\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"mqtt_consumer\")\n  |> filter(fn: (r) => r._field == \"cell_errors\")\n  |> aggregateWindow(every: v.windowPeriod, fn: max, createEmpty: false)\n  |> map(fn: (r) => {\n      e       = uint(v: int(v: r._value))\n      b2      = uint(v: 2)\n      b4      = uint(v: 4)\n      u1      = uint(v: 1)\n      u2      = uint(v: 2)\n      u3      = uint(v: 3)\n      nodata  = 4.0\n\n      shifted = e / b2\n\n      c0  = (shifted / uint(v: 1))       % b4\n      c1  = (shifted / uint(v: 4))       % b4\n      c2  = (shifted / uint(v: 16))      % b4\n      c3  = (shifted / uint(v: 64))      % b4\n      c4  = (shifted / uint(v: 256))     % b4\n      c5  = (shifted / uint(v: 1024))    % b4\n      c6  = (shifted / uint(v: 4096))    % b4\n      c7  = (shifted / uint(v: 16384))   % b4\n      c8  = (shifted / uint(v: 65536))   % b4\n      c9  = (shifted / uint(v: 262144))  % b4\n      c10 = (shifted / uint(v: 1048576)) % b4\n      c11 = (shifted / uint(v: 4194304)) % b4\n\n      pack_uc = (e / uint(v: 33554432)) % b2\n      pack_oc = (e / uint(v: 67108864)) % b2\n\n      return {\n        _time:          r._time,\n        \"Cell 0\":       if nc <  1 then nodata else if c0  == u1 then 1.0 else if c0  == u2 then 2.0 else if c0  == u3 then nodata else 0.0,\n        \"Cell 1\":       if nc <  2 then nodata else if c1  == u1 then 1.0 else if c1  == u2 then 2.0 else if c1  == u3 then nodata else 0.0,\n        \"Cell 2\":       if nc <  3 then nodata else if c2  == u1 then 1.0 else if c2  == u2 then 2.0 else if c2  == u3 then nodata else 0.0,\n        \"Cell 3\":       if nc <  4 then nodata else if c3  == u1 then 1.0 else if c3  == u2 then 2.0 else if c3  == u3 then nodata else 0.0,\n        \"Cell 4\":       if nc <  5 then nodata else if c4  == u1 then 1.0 else if c4  == u2 then 2.0 else if c4  == u3 then nodata else 0.0,\n        \"Cell 5\":       if nc <  6 then nodata else if c5  == u1 then 1.0 else if c5  == u2 then 2.0 else if c5  == u3 then nodata else 0.0,\n        \"Cell 6\":       if nc <  7 then nodata else if c6  == u1 then 1.0 else if c6  == u2 then 2.0 else if c6  == u3 then nodata else 0.0,\n        \"Cell 7\":       if nc <  8 then nodata else if c7  == u1 then 1.0 else if c7  == u2 then 2.0 else if c7  == u3 then nodata else 0.0,\n        \"Cell 8\":       if nc <  9 then nodata else if c8  == u1 then 1.0 else if c8  == u2 then 2.0 else if c8  == u3 then nodata else 0.0,\n        \"Cell 9\":       if nc < 10 then nodata else if c9  == u1 then 1.0 else if c9  == u2 then 2.0 else if c9  == u3 then nodata else 0.0,\n        \"Cell 10\":      if nc < 11 then nodata else if c10 == u1 then 1.0 else if c10 == u2 then 2.0 else if c10 == u3 then nodata else 0.0,\n        \"Cell 11\":      if nc < 12 then nodata else if c11 == u1 then 1.0 else if c11 == u2 then 2.0 else if c11 == u3 then nodata else 0.0,\n        \"Pack Current (Series Wiring)\": if pack_uc == u1 then 1.0 else if pack_oc == u1 then 2.0 else 0.0\n      }\n  })",
           "refId": "A",
           "datasource": {
             "type": "influxdb",
@@ -944,20 +974,20 @@
     }
   ],
   "preload": false,
-  "refresh": "5s",
+  "refresh": "auto",
   "schemaVersion": 42,
   "tags": [],
   "templating": {
     "list": []
   },
   "time": {
-    "from": "now-1m",
+    "from": "now-1h",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "browser",
   "title": "BMS Data",
   "uid": "ad445wg",
-  "version": 27,
+  "version": 50,
   "weekStart": ""
 }

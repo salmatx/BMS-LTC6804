@@ -21,9 +21,9 @@
 /*==============================================================================================================*/
 static void check_limits_sample(const bms_sample_t *s, bms_stats_t *flags);
 static void init_stats_from_first(const bms_sample_t *raw_sample, bms_stats_t *out);
-static void bms_sample_zero(bms_sample_t *sample);
 static void accumulate_sample(const bms_sample_t *raw_sample, bms_stats_t *out);
 static void calculate_average(bms_stats_t *accumulated_samples);
+static void remove_processed_samples(bms_sample_buffer_t *buf, size_t sample_count);
 
 /*==============================================================================================================*/
 /*                                            Private Constants                                                 */
@@ -45,10 +45,10 @@ static void calculate_average(bms_stats_t *accumulated_samples);
 /// window is computed. If any limit violations are detected, the samples are split into 0.2 s windows (4 samples each) and
 /// multiple statistics windows are computed.
 ///
-/// \param buf Pointer to ring buffer containing raw BMS samples
-/// \param out_stats Pointer to output statistics buffer
+/// \param[in,out] buf Pointer to ring buffer containing raw BMS samples. Head and count are updated after processing.
+/// \param[out] out_stats Pointer to output statistics buffer
 /// \return Number of processed samples
-int bms_compute_stats(bms_sample_buffer_t *buf, bms_stats_buffer_t *out_stats)
+size_t bms_compute_stats(bms_sample_buffer_t *buf, bms_stats_buffer_t *out_stats)
 {
     if (!buf || !out_stats || !buf->samples || buf->count == 0) {
         return 0;
@@ -66,7 +66,7 @@ int bms_compute_stats(bms_sample_buffer_t *buf, bms_stats_buffer_t *out_stats)
         return 0;
     }
 
-    // Check how many samples are available for processing (up to 1 s). Must be at least 20 samples.
+    // If more than 20 samples available fix the count to 20 to process only 1 s worth of data
     size_t available_samples_count = buf->count;
     if (available_samples_count > samples_per_1s) {
         available_samples_count = samples_per_1s;
@@ -83,11 +83,10 @@ int bms_compute_stats(bms_sample_buffer_t *buf, bms_stats_buffer_t *out_stats)
     bool any_violation = (flags.cell_errors != 0);
     bms_stats_t st = {0};
 
-    // TODO: Refactor to remove duplicate code in Case 1 and Case 2.
-    // Case 1: no violations -> single 1 s stats over all available samples.
+    // Case 1: no violations - single 1 s stats over all available samples.
     if (!any_violation) {
 
-        // Initialize stats from first sample
+        // Initialize stats for accumulation and set timestamp from first sample
         const bms_sample_t *first = &buf->samples[bms_buf_index(buf, 0)];
         init_stats_from_first(first, &st);
 
@@ -107,15 +106,12 @@ int bms_compute_stats(bms_sample_buffer_t *buf, bms_stats_buffer_t *out_stats)
         out_stats->stats_array[0] = st;
         out_stats->stats_count    = 1;
 
-        // Zeroing of samples used for calculation to avoid re-processing
-        for (size_t i = 0; i < available_samples_count; ++i) {
-            size_t idx = bms_buf_index(buf, i);
-            bms_sample_zero(&buf->samples[idx]);
-        }
+        // Consume processed samples from ring buffer (advance head and reduce count)
+        remove_processed_samples(buf, available_samples_count);
 
         return available_samples_count;
 
-    // Case 2: violation present -> split into 0.2 s subwindows.
+    // Case 2: violation present - split into 0.2 s subwindows.
     } else {
         // Number of stats windows created
         size_t windows_created = 0;
@@ -124,7 +120,7 @@ int bms_compute_stats(bms_sample_buffer_t *buf, bms_stats_buffer_t *out_stats)
     
         // Calculate statistics for 5 windows
         while (offset < available_samples_count && windows_created < BMS_MAX_STATS_WINDOWS) {
-            // Initialize stats from firs sample
+            // Initialize stats for accumulation and set timestamp from first sample
             const bms_sample_t *first = &buf->samples[bms_buf_index(buf, offset)];
             init_stats_from_first(first, &st);
     
@@ -149,22 +145,22 @@ int bms_compute_stats(bms_sample_buffer_t *buf, bms_stats_buffer_t *out_stats)
     
         out_stats->stats_count = windows_created;
 
-        // Zeroing of samples used for calculation to avoid re-processing
-        for (size_t i = 0; i < available_samples_count; ++i) {
-            size_t idx = bms_buf_index(buf, i);
-            bms_sample_zero(&buf->samples[idx]);
-        }
+        // Consume processed samples from ring buffer (advance head and reduce count)
+        remove_processed_samples(buf, available_samples_count);
     
         return available_samples_count;
     }
 }
 
+/*==============================================================================================================*/
+/*                                       Private Function Definitions                                           */
+/*==============================================================================================================*/
 /// This function consumes samples from buffer by moving head and reducing count by value of sample_count.
 ///
-/// \param buf Pointer to ring buffer containing raw BMS samples
-/// \param sample_count Number of samples to be removed
+/// \param[in, out] buf Pointer to ring buffer containing raw BMS samples
+/// \param[in] sample_count Number of samples to be removed
 /// \return None
-void remove_processed_samples(bms_sample_buffer_t *buf, int sample_count)
+static void remove_processed_samples(bms_sample_buffer_t *buf, size_t sample_count)
 {
     // Consume all samples used for this calculation (the whole 1 s window). Moving head and reducing count.
     buf->head  = (buf->head + sample_count) % buf->capacity;
@@ -173,15 +169,12 @@ void remove_processed_samples(bms_sample_buffer_t *buf, int sample_count)
     return;
 }
 
-/*==============================================================================================================*/
-/*                                       Private Function Definitions                                           */
-/*==============================================================================================================*/
 /// This function checks a single BMS sample for limit violations and updates the error bitmask.
 /// Function examines cell voltages and pack current of one raw sample against configured limits
 /// and sets corresponding bits in the cell_errors field of the flags structure.
 ///
-/// \param s Pointer to the raw BMS sample to check.
-/// \param flags Pointer to \ref bms_stats_t structure where violation bits will be set.
+/// \param[in] s Pointer to the raw BMS sample to check.
+/// \param[out] flags Pointer to ::bms_stats_t structure where violation bits will be set.
 /// \return None
 static void check_limits_sample(const bms_sample_t *s, bms_stats_t *flags)
 {
@@ -207,14 +200,15 @@ static void check_limits_sample(const bms_sample_t *s, bms_stats_t *flags)
             flags->cell_errors |= (1u << 26);
         }
     }
+
+    return;
 }
 
-/// This function initializes a \ref bms_stats_t structure from the first sample in a window.
-/// Sets timestamp, initializes min/max values from the first sample, and zeros averages and error flags.
+/// This function initializes a ::bms_stats_t structure to zero and sets the timestamp from the first raw sample.
 /// This function is used as the starting point for accumulating statistics over a time window.
 ///
-/// \param raw_sample Pointer to the first raw BMS sample in the window.
-/// \param out Pointer to the bms_stats_t structure to initialize.
+/// \param[in] raw_sample Pointer to the first raw BMS sample in the window.
+/// \param[out] out Pointer to the bms_stats_t structure to initialize.
 /// \return None
 static void init_stats_from_first(const bms_sample_t *raw_sample, bms_stats_t *out)
 {
@@ -231,28 +225,16 @@ static void init_stats_from_first(const bms_sample_t *raw_sample, bms_stats_t *o
     out->pack_i_avg = 0.0f;
 
     out->temperature_avg = 0.0f;
+
+    return;
 }
 
-/// This function zeros all fields of a \ref bms_sample_t structure which refers to one measured BMS sample.
-/// Fills the given sample with zeros using memset. This is used to mark consumed samples
-/// in the ring buffer as invalid and avoid re-processing them.
+/// This function accumulates a raw BMS sample into a ::bms_stats_t structure.
+/// Updates running sums for averages, and updates values
+/// pack voltage, pack current, and temperature. Also increments the sample count.
 ///
-/// \param sample Pointer to the bms_sample_t structure to zero. If NULL, the function returns immediately.
-/// \return None
-static void bms_sample_zero(bms_sample_t *sample)
-{
-    if (!sample) {
-        return;
-    }
-    memset(sample, 0, sizeof(*sample));
-}
-
-/// This function accumulates a raw BMS sample into a \ref bms_stats_t structure.
-/// Updates running sums for averages, and updates min/max values for cell voltages,
-/// pack voltage, and pack current. Also increments the sample count.
-///
-/// \param raw_sample Pointer to the raw BMS sample to accumulate.
-/// \param out Pointer to the bms_stats_t structure where data will be accumulated.
+/// \param[in] raw_sample Pointer to the raw BMS sample to accumulate.
+/// \param[out] out Pointer to the bms_stats_t structure where data will be accumulated.
 /// \return None
 static void accumulate_sample(const bms_sample_t *raw_sample, bms_stats_t *out)
 {
@@ -271,13 +253,15 @@ static void accumulate_sample(const bms_sample_t *raw_sample, bms_stats_t *out)
     }
 
     out->sample_count++;
+
+    return;
 }
 
-/// This function converts accumulated sums in a \ref bms_stats_t structure into averages.
+/// This function converts accumulated sums in a ::bms_stats_t structure into averages.
 /// Divides the accumulated sums (cell_v_avg, pack_v_avg, pack_i_avg) by the sample count
 /// to obtain the final average values. If sample_count is zero, the function returns without change.
 ///
-/// \param accumulated_samples Pointer to the bms_stats_t structure containing accumulated sums.
+/// \param[in, out] accumulated_samples Pointer to the bms_stats_t structure containing accumulated sums.
 /// \return None
 static void calculate_average(bms_stats_t *accumulated_samples)
 {
@@ -295,4 +279,6 @@ static void calculate_average(bms_stats_t *accumulated_samples)
     if (g_cfg.battery.temperature_enable) {
         accumulated_samples->temperature_avg *= inv_n;
     }
+
+    return;
 }

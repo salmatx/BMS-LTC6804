@@ -12,7 +12,7 @@
 /*==============================================================================================================*/
 /// Log module tag used by logging module
 #define LOG_MODULE_TAG "LED_CTRL"
-/// GPIO pin for onboard LED (GPIO2 on most ESP32 dev boards)
+/// GPIO pin for onboard LED
 #define LED_GPIO 2
 
 /*==============================================================================================================*/
@@ -40,7 +40,7 @@ static bool s_led_state = false;
 /*==============================================================================================================*/
 /*                                       Public Function Definitions                                            */
 /*==============================================================================================================*/
-/// Initialize LED control GPIO.
+/// This function initializes LED control GPIO.
 ///
 /// \param None
 /// \return ESP_OK on success, otherwise an error code
@@ -67,7 +67,7 @@ esp_err_t led_control_init(void)
     return ESP_OK;
 }
 
-/// Turn LED on.
+/// This function turns the LED on.
 ///
 /// \param None
 /// \return None
@@ -76,9 +76,11 @@ void led_control_turn_on(void)
     gpio_set_level(LED_GPIO, 1);
     s_led_state = true;
     BMS_LOGI("LED turned ON");
+
+    return;
 }
 
-/// Turn LED off.
+/// This function turns the LED off.
 ///
 /// \param None
 /// \return None
@@ -87,9 +89,11 @@ void led_control_turn_off(void)
     gpio_set_level(LED_GPIO, 0);
     s_led_state = false;
     BMS_LOGI("LED turned OFF");
+
+    return;
 }
 
-/// Get current LED state.
+/// This function gets current state of LED.
 ///
 /// \param None
 /// \return true if LED is ON, false if OFF

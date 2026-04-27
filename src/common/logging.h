@@ -63,11 +63,9 @@
 /*==============================================================================================================*/
 /*                                        Public Function Prototypes                                            */
 /*==============================================================================================================*/
-// Initialization API
 void bms_logging_init(void);
 void bms_logging_set_global_level(esp_log_level_t level);
 
-// RTC error log ring buffer
 void bms_log_rtc_store(const char *tag, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
 void bms_log_rtc_get_entries(char out[][BMS_LOG_ENTRY_MAXLEN], int *count);
 void bms_log_rtc_clear(void);

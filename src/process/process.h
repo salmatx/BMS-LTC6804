@@ -48,6 +48,7 @@ typedef struct {
                                                         ///< Bit 23-24:    cell 11 undervoltage / overvoltage
                                                         ///< Bit 25:       pack undercurrent
                                                         ///< Bit 26:       pack overcurrent
+                                                        ///< Bit 27-31:    spare
 } bms_stats_t;
 
 /// Structure defining buffer for storing multiple statistics windows.
@@ -67,8 +68,7 @@ typedef struct {
 /*==============================================================================================================*/
 /*                                        Public Function Prototypes                                            */
 /*==============================================================================================================*/
-int bms_compute_stats(bms_sample_buffer_t *buf, bms_stats_buffer_t *out_stats);
-void remove_processed_samples(bms_sample_buffer_t *buf, int sample_count);
+size_t bms_compute_stats(bms_sample_buffer_t *buf, bms_stats_buffer_t *out_stats);
 
 /*==============================================================================================================*/
 /*                                          Public Inline Functions                                             */

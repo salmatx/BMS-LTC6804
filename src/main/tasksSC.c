@@ -101,7 +101,7 @@ esp_err_t slow_core_TWDT_create(void)
     return ESP_OK;
 }
 
-/// This function deletes Slow Core feeder task. Call when entering CONFIG state.
+/// This function deletes Slow Core feeder task.
 /// Task will unregister from TWDT gracefully before deletion.
 ///
 /// \param None
@@ -120,7 +120,7 @@ void slow_core_TWDT_delete(void)
             vTaskDelay(pdMS_TO_TICKS(50));
         }
         
-        // Force delete if still running. Safeguard, should not happen.
+        // Force delete if still running.
         if (s_slow_core_feeder_handle) {
             BMS_LOGW("Force deleting Slow Core feeder task (didn't exit gracefully)");
             vTaskDelete(s_slow_core_feeder_handle);
@@ -133,6 +133,8 @@ void slow_core_TWDT_delete(void)
         
         BMS_LOGI("Slow Core feeder cleaned up");
     }
+
+    return;
 }
 
 /*==============================================================================================================*/
@@ -172,13 +174,15 @@ static void slow_core_task()
             s_allow_feeding = false;
         }
 
-        // Puts task into blocked state until next absolute period (prevents timing drift from processing overhead)
+        // Puts task into blocked state until next absolute period
         vTaskDelayUntil(&last_wake, sw_check_ticks);
     }
+
+    // Missing return because it is not reachable
 }
 
 /// Slow Core TWDT feeder task. This task periodically feeds (resets) the hardware TWDT to prevent timeout.
-/// Feeding is only performed if \ref s_allow_feeding flag is true, otherwise feeding is skipped, allowing TWDT to expire
+/// Feeding is only performed if ::s_allow_feeding flag is true, otherwise feeding is skipped, allowing TWDT to expire
 /// and reset the system.
 ///
 /// \param None
@@ -196,7 +200,7 @@ static void slow_core_feeder_task()
     // Main Slow Core feeder loop. Periodically feed TWDT if allowed.
     while (!s_should_exit_feeder)
     {
-        // Variable_allow_feeding indicates whether feeding is allowed. Variable can be set to false
+        // Variable s_allow_feeding indicates whether feeding is allowed. Variable can be set to false
         // by Slow Core tasks on error conditions.
         if (s_allow_feeding) {
             if (bms_wdt_feed_self() != ESP_OK) {
@@ -212,4 +216,6 @@ static void slow_core_feeder_task()
     bms_wdt_unregister_current_task();
     s_slow_core_feeder_handle = NULL;
     vTaskDelete(NULL);
+
+    return;
 }

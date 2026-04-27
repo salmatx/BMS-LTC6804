@@ -81,13 +81,14 @@ static httpd_handle_t s_httpd = NULL;
 /*==============================================================================================================*/
 /// This function starts the HTTP server and registers all HTTP endpoints.
 ///
-/// param None
+/// \param None
 /// \return ESP_OK on success, otherwise an error code
 esp_err_t http_server_start(void)
 {
     if (s_httpd) return ESP_OK;
 
-    // Initialize LED control
+    // Initialize LED control. LED is controlled via HTTP endpoints, so we initialize it here
+    // to ensure correct sequencing of initialization and avoid potential issues with uninitialized LED state.
     led_control_init();
 
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
@@ -148,7 +149,7 @@ esp_err_t http_server_start(void)
 
 /// This function stops the HTTP server.
 ///
-/// param None
+/// \param None
 /// \return ESP_OK on success, otherwise an error code
 esp_err_t http_server_stop(void)
 {
@@ -163,9 +164,9 @@ esp_err_t http_server_stop(void)
 /*==============================================================================================================*/
 /// This function handles sending a static file to the HTTP client. Function is used within created HTTP endpoint.
 ///
-/// \param req Pointer to HTTP request structure
-/// \param path Path to the file to send
-/// \param ctype Content type of the file
+/// \param[in] req Pointer to HTTP request structure
+/// \param[in] path Path to the file to send
+/// \param[in] ctype Content type of the file
 /// \return ESP_OK on success, otherwise an error code
 static esp_err_t send_file(httpd_req_t *req, const char *path, const char *ctype)
 {
@@ -174,8 +175,10 @@ static esp_err_t send_file(httpd_req_t *req, const char *path, const char *ctype
         return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "not found");
     }
 
+    // Set content type header
     httpd_resp_set_type(req, ctype);
 
+    // Read file in chunks and send to client
     char chunk[1024];
     size_t n;
     while ((n = fread(chunk, 1, sizeof(chunk), f)) > 0) {
@@ -193,10 +196,10 @@ static esp_err_t send_file(httpd_req_t *req, const char *path, const char *ctype
 /// This function parses a single URL-encoded POST data and converts it to a string value.
 /// It is helper function used in configuration saving endpoint.
 ///
-/// \param buf Pointer to buffer containing URL-encoded POST data
-/// \param key Key of the parameter to parse
-/// \param value Pointer to buffer where the parsed value will be stored
-/// \param value_len Length of the value buffer
+/// \param[in] buf Pointer to buffer containing URL-encoded POST data
+/// \param[in] key Key of the parameter to parse
+/// \param[out] value Pointer to buffer where the parsed value will be stored
+/// \param[in] value_len Length of the value buffer
 /// \return ESP_OK on success, otherwise an error code
 static esp_err_t parse_post_param(const char *buf, const char *key, char *value, size_t value_len)
 {
@@ -235,12 +238,12 @@ static esp_err_t parse_post_param(const char *buf, const char *key, char *value,
     return ESP_OK;
 }
 
-/// Sends an error modal window to the user with a custom title and message.
+/// This function sends an error modal window to the user with a custom title and message.
 /// Loads HTML template from file and replaces placeholders with actual values.
 ///
-/// \param req Pointer to HTTP request structure
-/// \param title Title of the error modal
-/// \param message Error message to display
+/// \param[in] req Pointer to HTTP request structure
+/// \param[in] title Title of the error modal
+/// \param[in] message Error message to display
 /// \return ESP_FAIL always (to indicate validation error)
 static esp_err_t send_error_modal(httpd_req_t *req, const char *title, const char *message)
 {
@@ -292,7 +295,7 @@ static esp_err_t send_error_modal(httpd_req_t *req, const char *title, const cha
 /// This is the GET handler for retrieving current configuration data as JSON response. It builds JSON object
 /// containing current configuration parameters and sends it to the HTTP client.
 ///
-/// \param req Pointer to HTTP request structure
+/// \param[in] req Pointer to HTTP request structure
 /// \return ESP_OK on success, otherwise an error code
 static esp_err_t h_config_data(httpd_req_t *req)
 {
@@ -347,7 +350,7 @@ static esp_err_t h_config_data(httpd_req_t *req)
 /// 5. Sends success response with auto-redirect to main BMS page.
 /// 6. Restarts the ESP32 to apply new configuration.
 ///
-/// \param req Pointer to HTTP request structure
+/// \param[in] req Pointer to HTTP request structure
 /// \return ESP_OK on success, otherwise an error code
 static esp_err_t h_config_save(httpd_req_t *req)
 {
@@ -520,7 +523,7 @@ static esp_err_t h_config_save(httpd_req_t *req)
 /// 2. Sends response indicating configuration was canceled with auto-redirect to main BMS page.
 /// 3. Restarts the ESP32 to exit configuration mode and enter normal processing mode.
 ///
-/// \param req Pointer to HTTP request structure
+/// \param[in] req Pointer to HTTP request structure
 /// \return ESP_OK on success, otherwise an error code
 static esp_err_t h_config_cancel(httpd_req_t *req)
 {
@@ -551,7 +554,7 @@ static esp_err_t h_config_cancel(httpd_req_t *req)
 /// This is the GET handler for serving battery templates JSON.
 /// Serves the cached templates string directly without cJSON parsing to minimize heap usage.
 ///
-/// \param req Pointer to HTTP request structure
+/// \param[in] req Pointer to HTTP request structure
 /// \return ESP_OK on success, otherwise an error code
 static esp_err_t h_config_templates(httpd_req_t *req)
 {
@@ -563,7 +566,7 @@ static esp_err_t h_config_templates(httpd_req_t *req)
 /// This is the POST handler for saving a custom battery template. It receives a JSON body with
 /// battery parameters and adds the template to the battery_templates array stored in config.json.
 ///
-/// \param req Pointer to HTTP request structure
+/// \param[in] req Pointer to HTTP request structure
 /// \return ESP_OK on success, otherwise an error code
 static esp_err_t h_template_save(httpd_req_t *req)
 {
@@ -590,6 +593,7 @@ static esp_err_t h_template_save(httpd_req_t *req)
         return httpd_resp_sendstr(req, "{\"ok\":false,\"error\":\"Invalid JSON\"}");
     }
 
+    // Id is generated in config.html
     cJSON *jid   = cJSON_GetObjectItem(body, "id");
     cJSON *jname = cJSON_GetObjectItem(body, "name");
     cJSON *jcat  = cJSON_GetObjectItem(body, "category");
@@ -630,7 +634,7 @@ static esp_err_t h_template_save(httpd_req_t *req)
 /// This is the POST handler for editing an existing battery template. It receives a JSON body
 /// with the template id and updated parameters, then replaces the template in config.json.
 ///
-/// \param req Pointer to HTTP request structure
+/// \param[in] req Pointer to HTTP request structure
 /// \return ESP_OK on success, otherwise an error code
 static esp_err_t h_template_edit(httpd_req_t *req)
 {
@@ -696,7 +700,7 @@ static esp_err_t h_template_edit(httpd_req_t *req)
 /// This is the POST handler for deleting a battery template. It receives a JSON body
 /// with the template id and removes it from the battery_templates array in config.json.
 ///
-/// \param req Pointer to HTTP request structure
+/// \param[in] req Pointer to HTTP request structure
 /// \return ESP_OK on success, otherwise an error code
 static esp_err_t h_template_delete(httpd_req_t *req)
 {
@@ -746,7 +750,7 @@ static esp_err_t h_template_delete(httpd_req_t *req)
 
 /// This is the GET handler for root endpoint that redirects to main BMS page.
 ///
-/// \param req Pointer to HTTP request structure
+/// \param[in] req Pointer to HTTP request structure
 /// \return ESP_OK on success, otherwise an error code
 static esp_err_t h_root_redirect(httpd_req_t *req)
 {
@@ -759,7 +763,7 @@ static esp_err_t h_root_redirect(httpd_req_t *req)
 
 /// This is the GET handler for main BMS page. It serves the index.html file.
 ///
-/// \param req Pointer to HTTP request structure
+/// \param[in] req Pointer to HTTP request structure
 /// \return ESP_OK on success, otherwise an error code
 static esp_err_t h_index(httpd_req_t *req)
 {
@@ -768,7 +772,7 @@ static esp_err_t h_index(httpd_req_t *req)
 
 /// This is the GET handler for statistics page. It serves the stats.html file.
 ///
-/// \param req Pointer to HTTP request structure
+/// \param[in] req Pointer to HTTP request structure
 /// \return ESP_OK on success, otherwise an error code
 static esp_err_t h_stats_page(httpd_req_t *req)
 {
@@ -778,7 +782,7 @@ static esp_err_t h_stats_page(httpd_req_t *req)
 /// This is the GET handler for configuration page. It serves the config.html file and
 /// sets the configuration mode flag in NVS to indicate that device is in configuration mode.
 ///
-/// \param req Pointer to HTTP request structure
+/// \param[in] req Pointer to HTTP request structure
 /// \return ESP_OK on success, otherwise an error code
 static esp_err_t h_config_page(httpd_req_t *req)
 {
@@ -796,7 +800,7 @@ static esp_err_t h_config_page(httpd_req_t *req)
 
 /// This is the GET handler for serving JavaScript file used by charts on stats page. It serves the charts.js file.
 ///
-/// \param req Pointer to HTTP request structure
+/// \param[in] req Pointer to HTTP request structure
 /// \return ESP_OK on success, otherwise an error code
 static esp_err_t h_js_charts(httpd_req_t *req)
 {
@@ -805,7 +809,7 @@ static esp_err_t h_js_charts(httpd_req_t *req)
 
 /// This is the GET handler for serving the bundled Chart.js library.
 ///
-/// \param req Pointer to HTTP request structure
+/// \param[in] req Pointer to HTTP request structure
 /// \return ESP_OK on success, otherwise an error code
 static esp_err_t h_js_chartlib(httpd_req_t *req)
 {
@@ -814,7 +818,7 @@ static esp_err_t h_js_chartlib(httpd_req_t *req)
 
 /// This is the GET handler for serving battery templates JavaScript file. It serves the batteries.js file.
 ///
-/// \param req Pointer to HTTP request structure
+/// \param[in] req Pointer to HTTP request structure
 /// \return ESP_OK on success, otherwise an error code
 static esp_err_t h_js_batteries(httpd_req_t *req)
 {
@@ -823,7 +827,7 @@ static esp_err_t h_js_batteries(httpd_req_t *req)
 
 /// This is the GET handler for serving CSS stylesheet used by BMS web pages. It serves the style.css file.
 ///
-/// \param req Pointer to HTTP request structure
+/// \param[in] req Pointer to HTTP request structure
 /// \return ESP_OK on success, otherwise an error code
 static esp_err_t h_css_style(httpd_req_t *req)
 {
@@ -833,7 +837,7 @@ static esp_err_t h_css_style(httpd_req_t *req)
 /// This is the GET handler for retrieving the latest statistics sample as a single JSON object.
 /// History is maintained on the browser side.
 ///
-/// \param req Pointer to HTTP request structure
+/// \param[in] req Pointer to HTTP request structure
 /// \return ESP_OK on success, otherwise an error code
 static esp_err_t h_stats_data(httpd_req_t *req)
 {
@@ -843,7 +847,7 @@ static esp_err_t h_stats_data(httpd_req_t *req)
 /// This fuction validates if the given string is a valid IPv4 address using inet_pton.
 /// This uses the same validation mechanism as WiFi connection creation.
 ///
-/// \param ip_str String representation of the IP address
+/// \param[in] ip_str String representation of the IP address
 /// \return true if the IP address is valid, false otherwise
 static bool is_valid_ip(const char *ip_str)
 {
@@ -858,7 +862,7 @@ static bool is_valid_ip(const char *ip_str)
 
 /// POST handler for turning LED on. Calls LED control module.
 ///
-/// \param req Pointer to HTTP request structure
+/// \param[in] req Pointer to HTTP request structure
 /// \return ESP_OK on success
 static esp_err_t h_led_on(httpd_req_t *req)
 {
@@ -870,7 +874,7 @@ static esp_err_t h_led_on(httpd_req_t *req)
 
 /// POST handler for turning LED off. Calls LED control module.
 ///
-/// \param req Pointer to HTTP request structure
+/// \param[in] req Pointer to HTTP request structure
 /// \return ESP_OK on success
 static esp_err_t h_led_off(httpd_req_t *req)
 {
@@ -882,7 +886,7 @@ static esp_err_t h_led_off(httpd_req_t *req)
 
 /// GET handler for retrieving current LED status.
 ///
-/// \param req Pointer to HTTP request structure
+/// \param[in] req Pointer to HTTP request structure
 /// \return ESP_OK on success
 static esp_err_t h_led_status(httpd_req_t *req)
 {

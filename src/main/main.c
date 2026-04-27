@@ -79,5 +79,7 @@ void app_main(void)
     }
 
     BMS_LOGI("Application started.");
+
+    // Return is missing because it is unreachable
 }
 

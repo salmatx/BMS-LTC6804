@@ -9,7 +9,7 @@ cd "../../src"
 
 mkdir -p build
 
-# Clean build directory (true condition added to don't fail when build is empty before clean)
+# Clean build directory
 idf.py fullclean || true
 
 # Run build, log stdout+stderr

@@ -1,4 +1,4 @@
-/// ESP32 internal ADC oneshot driver module.
+/// ESP32 internal ADC driver module.
 /// Configures ADC Unit 1 in oneshot mode for reading analog input pins (GPIO 34, 35, 36, 39).
 
 /*==============================================================================================================*/
@@ -56,6 +56,7 @@ static adc_oneshot_unit_handle_t s_adc_handle = NULL;
 /// This function initializes ADC Unit 1 in oneshot mode and configures all analog input channels
 /// with 12-bit resolution and 12 dB attenuation (0–3.3 V range).
 ///
+/// \param None
 /// \return ESP_OK on success, otherwise an error code
 esp_err_t adc_init(void)
 {
@@ -96,8 +97,8 @@ esp_err_t adc_init(void)
 
 /// This function performs a single ADC conversion on the specified analog pin.
 ///
-/// \param pin        GPIO pin to read (must be one of adc_pin_t values)
-/// \param raw_value  Pointer to receive the raw ADC value (0–4095)
+/// \param[in] pin        GPIO pin to read
+/// \param[out] raw_value  Pointer to receive the raw ADC value (0–4095)
 /// \return ESP_OK on success, ESP_ERR_INVALID_STATE if not initialized,
 ///         ESP_ERR_INVALID_ARG on bad pin or NULL pointer
 esp_err_t adc_read(adc_pin_t pin, int *raw_value)
@@ -123,15 +124,15 @@ esp_err_t adc_read(adc_pin_t pin, int *raw_value)
 /*==============================================================================================================*/
 /// This function maps an adc_pin_t GPIO number to the corresponding ADC1 channel.
 ///
-/// \param pin  GPIO pin number
-/// \return ADC channel, or ADC_CHANNEL_INVALID if the pin is not valid
+/// \param[in] pin  GPIO pin number
+/// \return ADC channel, or ADC_CHANNEL_INVALID if the pin is not in valid ADC range
 static adc_channel_t pin_to_channel(adc_pin_t pin)
 {
     switch (pin) {
-        case ADC_PIN_GPIO36: return ADC_CHANNEL_0;  // GPIO 36 = ADC1_CH0
-        case ADC_PIN_GPIO39: return ADC_CHANNEL_3;  // GPIO 39 = ADC1_CH3
-        case ADC_PIN_GPIO34: return ADC_CHANNEL_6;  // GPIO 34 = ADC1_CH6
-        case ADC_PIN_GPIO35: return ADC_CHANNEL_7;  // GPIO 35 = ADC1_CH7
+        case ADC_PIN_GPIO36: return ADC_CHANNEL_0;
+        case ADC_PIN_GPIO39: return ADC_CHANNEL_3;
+        case ADC_PIN_GPIO34: return ADC_CHANNEL_6;
+        case ADC_PIN_GPIO35: return ADC_CHANNEL_7;
         default:             return ADC_CHANNEL_INVALID;
     }
 }

@@ -1,5 +1,5 @@
-/// Header file for ESP32 internal ADC oneshot driver module.
-/// Provides oneshot ADC readings on selected analog input pins (ADC Unit 1).
+/// Header file forinternal ADC driver module.
+/// Provides oneshot ADC readings on selected analog input pins.
 
 /*==============================================================================================================*/
 /*                                                 Includes                                                     */
@@ -12,12 +12,13 @@
 /*==============================================================================================================*/
 /*                                               Public Macros                                                  */
 /*==============================================================================================================*/
-#define ADC_RANGE 4096    ///< Maximum raw ADC value for 12-bit resolution
+/// Maximum raw ADC value for 12-bit resolution
+#define ADC_RANGE 4096
 
 /*==============================================================================================================*/
 /*                                               Public Types                                                   */
 /*==============================================================================================================*/
-/// Enumeration of analog GPIO pins available for ADC reading (all ADC1, input-only on ESP32).
+/// Enumeration of analog GPIO pins available for ADC1 reading
 typedef enum {
     ADC_PIN_GPIO34 = 34,
     ADC_PIN_GPIO35 = 35,
