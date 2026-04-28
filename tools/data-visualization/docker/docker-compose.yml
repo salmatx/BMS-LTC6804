@@ -6,7 +6,9 @@ services:
     ports:
       - "1883:1883"
     volumes:
-      - ./mosquitto:/mosquitto
+      - ./mosquitto/config/mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - ./mosquitto/data:/mosquitto/data
+      - ./mosquitto/log:/mosquitto/log
     networks:
       - iot
 
@@ -38,6 +40,7 @@ services:
       - mosquitto
     environment:
       - INFLUX_TOKEN=${INFLUX_TOKEN}
+    command: ["--config", "/etc/telegraf/telegraf.conf"]
     volumes:
       - ./telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
     networks:
@@ -45,6 +48,7 @@ services:
 
   grafana:
     image: grafana/grafana:latest
+    user: "0"
     container_name: grafana
     restart: unless-stopped
     ports:
@@ -52,8 +56,6 @@ services:
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=bms12345
-    volumes:
-      - ./grafana-data:/var/lib/grafana
     networks:
       - iot
 

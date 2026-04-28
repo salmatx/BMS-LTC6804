@@ -14,10 +14,9 @@ sdkconfig.old
 __pycache__/
 
 grafana-data/
-influxdb2-config
-influxdb2-data
-mosquitto/data
-mosquitto/log
+influxdb2-config/
+influxdb2-data/
+mosquitto/
 
 config.json
 dependencies.lock
