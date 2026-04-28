@@ -7,5 +7,5 @@ idf_component_register(
         common
         bms
         network
-        json
+        espressif__cjson
 )

@@ -9,5 +9,5 @@ idf_component_register(
         process
         configuration
         esp_wifi
-        mqtt
+        espressif__mqtt
 )

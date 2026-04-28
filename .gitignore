@@ -2,6 +2,8 @@ build/
 .cache/
 esp-idf*
 
+managed_components/
+
 sdkconfig
 sdkconfig.old
 
@@ -18,3 +20,4 @@ mosquitto/data
 mosquitto/log
 
 config.json
+dependencies.lock

@@ -9,6 +9,6 @@ idf_component_register(
         bms
         esp_http_server
         configuration
-        json
+        espressif__cjson
         nvs_flash
 )
