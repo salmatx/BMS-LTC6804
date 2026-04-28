@@ -13,14 +13,6 @@ mkdir -p \
   mosquitto/data \
   mosquitto/log
 
-echo "Setting Grafana permissions..."
-sudo chown -R 472:472 ./grafana-data
-
-# Write .env
-cat > .env << EOF
-INFLUX_TOKEN=${INFLUX_TOKEN}
-EOF
-
 echo "Creating Mosquitto config..."
 cat > mosquitto/config/mosquitto.conf << 'EOF'
 persistence true
@@ -28,6 +20,14 @@ persistence_location /mosquitto/data/
 log_dest file /mosquitto/log/mosquitto.log
 listener 1883
 allow_anonymous true
+EOF
+
+echo "Setting Grafana permissions..."
+sudo chown -R 472:472 ./grafana-data
+
+# Write .env
+cat > .env << EOF
+INFLUX_TOKEN=${INFLUX_TOKEN}
 EOF
 
 echo "Setting Telegraf permissions..."
