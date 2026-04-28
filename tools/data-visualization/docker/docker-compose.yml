@@ -6,9 +6,9 @@ services:
     ports:
       - "1883:1883"
     volumes:
-      - ./mosquitto/config/mosquitto.conf:/mosquitto/config/mosquitto.conf
-      - ./mosquitto/data:/mosquitto/data
-      - ./mosquitto/log:/mosquitto/log
+      - ./mosquitto/config/mosquitto.conf:/mosquitto/config/mosquitto.conf:Z
+      - ./mosquitto/data:/mosquitto/data:Z
+      - ./mosquitto/log:/mosquitto/log:Z
     networks:
       - iot
 
@@ -26,8 +26,8 @@ services:
       - DOCKER_INFLUXDB_INIT_BUCKET=bms
       - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=${INFLUX_TOKEN}
     volumes:
-      - ./influxdb2-data:/var/lib/influxdb2
-      - ./influxdb2-config:/etc/influxdb2
+      - ./influxdb2-data:/var/lib/influxdb2:Z
+      - ./influxdb2-config:/etc/influxdb2:Z
     networks:
       - iot
 
@@ -42,7 +42,7 @@ services:
       - INFLUX_TOKEN=${INFLUX_TOKEN}
     command: ["--config", "/etc/telegraf/telegraf.conf"]
     volumes:
-      - ./telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+      - ./telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro,Z
     networks:
       - iot
 
