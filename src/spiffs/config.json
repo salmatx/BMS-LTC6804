@@ -17,7 +17,7 @@
     {
       "label": "NiCd",
       "batteries": [
-        { "id": "KPM120P",   "name": "KPM120P (1.2V, 120Ah)",     "cell_v_min": 1.00, "cell_v_max": 1.40, "current_min": 12,    "current_max": 24 },
+        { "id": "KPM120P",   "name": "KPM120P (1.2V, 120Ah)",     "cell_v_min": 1.00, "cell_v_max": 1.60, "current_min": 12,    "current_max": 24 },
         { "id": "SUN+185",   "name": "SUN+185 (1.2V, 185Ah)",     "cell_v_min": 1.00, "cell_v_max": 1.60, "current_min": 18.5,  "current_max": 37 },
         { "id": "SUN+460",   "name": "SUN+460 (1.2V, 460Ah)",     "cell_v_min": 1.00, "cell_v_max": 1.60, "current_min": 46,    "current_max": 92 },
         { "id": "SUN+920",   "name": "SUN+920 (1.2V, 920Ah)",     "cell_v_min": 1.00, "cell_v_max": 1.60, "current_min": 92,    "current_max": 184 },
