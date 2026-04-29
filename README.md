@@ -1,10 +1,10 @@
 # BMS-LTC6804
 
-Battery management system for measuring voltage up to 5 battery cells in range 0.5 V to 2 V.
+Battery management system for measuring voltage up to 12 battery cells in range 0 V to 5 V.
 
 ## Features
 
-- Up to 5 battery cells
+- Up to 12 battery cells
 - ESP 32 microcontroller
 - Transfer of measured data using MQTT
 
