@@ -74,7 +74,7 @@ def parse_row(row: dict) -> str:
     cell_flags = int(row["telemetry_ltc_cell_flags"])
     diag = int(row["telemetry_ltc_diag"])
     reset_reason = int(row["telemetry_reset_reason"])
-    reset_message = row["telemetry_reset_msg"]
+    reset_message = row.get("telemetry_reset_msg", "")
 
     block = (
         f"Time: {time_str}\n"
