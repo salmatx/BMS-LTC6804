@@ -56,6 +56,8 @@ services:
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=bms12345
+    volumes:
+      - ./grafana-data:/var/lib/grafana:Z
     networks:
       - iot
 
