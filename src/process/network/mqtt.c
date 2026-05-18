@@ -58,7 +58,7 @@ esp_err_t bms_mqtt_init(void)
     esp_mqtt_client_config_t cfg = {
         .broker.address.uri       = g_cfg.mqtt.uri,
         .credentials.client_id    = "esp32-bms",
-        .network.timeout_ms       = 30000,
+        .network.timeout_ms       = 10000,
         .session.keepalive        = 60,
     };
 
